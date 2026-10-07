@@ -9,7 +9,8 @@
 //     trunk-recorder, SDRTrunk or OP25 that streams MP3 over the hotspot).
 //     That audio is yours, so it plays right here in the page.
 
-import { FEEDS, feedUrl, feedSource } from './radio-feeds.js';
+import { FEEDS, feedUrl, feedSource, BROADCASTIFY_COUNTY_URL } from './radio-feeds.js';
+import { fetchCounty, fetchStations, sortStations } from './stations.js';
 import { CALL_PACKS, groupName } from './calls-groups.js';
 import { createCallsPlayer, hasCallsKeys } from './calls.js';
 import { distanceM } from './geo.js';
@@ -58,7 +59,9 @@ export function createRadio(app) {
   const native = window.GevNative && typeof window.GevNative.radioOpen === 'function' ? window.GevNative : null;
   let audio = null; // <audio> for MY SCANNER
   let audioRetry = null;
-  let playingId = ''; // feed id, 'mine' or 'calls'
+  let playingId = ''; // feed id, 'mine', 'calls' or 'station:<id>'
+  let playingLabel = '';
+  let county = null; // { ctid, name } for the truck's position
   let onChange = () => {};
   let callsStatus = ''; // "signing in", "listening", "2 waiting"
   let callsNow = null; // the call playing right now
@@ -118,7 +121,7 @@ export function createRadio(app) {
   }
 
   function openPage(feed) {
-    const url = feedUrl(feed);
+    const url = feed.pageUrl || feedUrl(feed);
     stopMine();
     stopCalls();
     if (native) {
@@ -171,7 +174,7 @@ export function createRadio(app) {
       audio.load();
       audio = null;
     }
-    if (playingId === 'mine') {
+    if (playingId === 'mine' || playingId.indexOf('station:') === 0) {
       playingId = '';
       announce();
     }
@@ -183,6 +186,11 @@ export function createRadio(app) {
       toast(store.myScannerUrl.trim() ? 'That address is not valid. It needs to start with http:// or https://.' : 'Enter your scanner stream address first.');
       return;
     }
+    playStream(url, 'mine', 'My scanner');
+  }
+
+  /** One <audio> for anything that streams straight into the page: your scanner or a radio station. */
+  function playStream(url, id, label) {
     stopPage();
     stopMine();
     stopCalls();
@@ -195,10 +203,10 @@ export function createRadio(app) {
     // A hotspot drop ends the stream; try again a few seconds later, forever,
     // until the driver presses STOP.
     audio.onerror = () => {
-      if (audioRetry || playingId !== 'mine') return;
+      if (audioRetry || playingId !== id) return;
       audioRetry = setTimeout(() => {
         audioRetry = null;
-        if (playingId === 'mine' && audio) {
+        if (playingId === id && audio) {
           audio.src = url;
           audio.play().catch(() => {});
         }
@@ -206,10 +214,11 @@ export function createRadio(app) {
     };
     audio.src = url;
     audio.play().catch((err) => {
-      console.warn('my scanner:', err);
+      console.warn('stream:', err);
       toast('The stream did not start. Check the address and the hotspot.');
     });
-    playingId = 'mine';
+    playingId = id;
+    playingLabel = label;
     announce();
     closeSheet();
   }
@@ -260,6 +269,76 @@ export function createRadio(app) {
     }
   }
 
+  function countySection(body) {
+    body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'EVERY FEED IN THIS COUNTY')));
+    const button = el('button', { class: 'pill wide' }, county ? `ALL ${county.name.toUpperCase()} COUNTY FEEDS` : 'FINDING YOUR COUNTY...');
+    button.disabled = !county;
+    button.addEventListener('click', () => {
+      if (!county) return;
+      openPage({ id: `county-${county.ctid}`, kind: 'broadcastify', feed: county.ctid, name: `${county.name} County feeds`, pageUrl: `${BROADCASTIFY_COUNTY_URL}${county.ctid}` });
+    });
+    body.appendChild(button);
+    body.appendChild(
+      el(
+        'p',
+        { class: 'sheet-sub' },
+        "Broadcastify's full list for the county you are in: police, fire, ham repeaters, GMRS, rail, weather, with who is online and how many are listening. Pick one on their page.",
+      ),
+    );
+    if (!county) {
+      fetchCounty(app.origin()).then((found) => {
+        county = found;
+        button.textContent = `ALL ${found.name.toUpperCase()} COUNTY FEEDS`;
+        button.disabled = false;
+      });
+    }
+  }
+
+  // A station streams for as long as it plays, so LOW DATA switches it off.
+  function playStation(st) {
+    if (app.isLowData()) {
+      toast('Low data is on, so radio stations are off to save your hotspot.');
+      return;
+    }
+    playStream(st.url, `station:${st.id}`, st.name);
+  }
+
+  function stationsSection(body) {
+    body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'RADIO STATIONS NEAR ME')));
+    const holder = el('div');
+    const load = el('button', { class: 'pill wide' }, 'SHOW ARIZONA STATIONS');
+    load.addEventListener('click', () => {
+      load.disabled = true;
+      load.textContent = 'LOADING...';
+      fetchStations().then(
+        (rows) => {
+          holder.textContent = '';
+          const stations = sortStations(rows, app.origin());
+          for (const st of stations) {
+            const row = el(
+              'button',
+              { class: 'result', onclick: () => playStation(st) },
+              el('b', {}, st.name),
+              el('span', {}, [st.miles === null ? 'Arizona' : `${Math.round(st.miles)} mi`, st.tags, st.codec].filter(Boolean).join(' · ')),
+            );
+            if (playingId === `station:${st.id}`) row.classList.add('on');
+            holder.appendChild(row);
+          }
+          load.hidden = true;
+        },
+        (err) => {
+          console.warn('stations:', err);
+          load.disabled = false;
+          load.textContent = 'SHOW ARIZONA STATIONS';
+          toast('Could not load the station list. Check the hotspot.');
+        },
+      );
+    });
+    body.appendChild(load);
+    body.appendChild(holder);
+    body.appendChild(el('p', { class: 'credits' }, 'Station directory: Radio Browser (public domain). Each stream comes straight from that broadcaster.'));
+  }
+
   function feedRow(entry) {
     const feed = entry.feed;
     const miles = Math.round(entry.miles);
@@ -307,7 +386,7 @@ export function createRadio(app) {
       el('p', { class: 'sheet-sub' }, 'Your own RTL-SDR receiver streaming MP3 over the hotspot. Plays right here, no page needed.'),
     );
 
-    body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'PUBLIC FEEDS, NEAREST FIRST')));
+    body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'LIVE PUBLIC SAFETY FEEDS, NEAREST FIRST')));
     body.appendChild(
       el(
         'p',
@@ -318,6 +397,9 @@ export function createRadio(app) {
       ),
     );
     for (const entry of sortFeedsByDistance(FEEDS, app.origin())) body.appendChild(feedRow(entry));
+
+    countySection(body);
+    stationsSection(body);
 
     body.appendChild(
       el(
@@ -333,6 +415,13 @@ export function createRadio(app) {
     openList,
     stopAll,
     isPlaying: () => !!playingId,
+    /** LOW DATA switched on: a playing radio station stops (your own scanner keeps going). */
+    onLowData(on) {
+      if (on && playingId.indexOf('station:') === 0) {
+        stopMine();
+        toast('Low data is on: the radio station stopped.');
+      }
+    },
     /** Called with the playing feed id ('' when silent) whenever it changes. */
     onChange(fn) {
       onChange = fn;

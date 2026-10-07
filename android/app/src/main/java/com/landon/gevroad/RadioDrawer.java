@@ -9,6 +9,7 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -39,7 +40,7 @@ final class RadioDrawer {
     private final LinearLayout root;
     private final TextView title;
     private final Button hideButton;
-    private final WebView web;
+    private WebView web;
     private boolean folded;
     private Runnable onClosed;
     private IntConsumer onLayout; // drawer height in CSS px, 0 when closed
@@ -79,17 +80,22 @@ final class RadioDrawer {
 
         root.addView(bar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(BAR_DP)));
 
-        web = new WebView(activity);
-        WebSettings settings = web.getSettings();
+        web = createWeb();
+    }
+
+    /** The scanner page's WebView. Built again after its renderer dies. */
+    private WebView createWeb() {
+        WebView view = new WebView(activity);
+        WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(true); // their players need it
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(true); // the driver presses play on their page
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
-        web.setBackgroundColor(Color.parseColor("#0f161e"));
-        web.setWebViewClient(new WebViewClient() {
+        view.setBackgroundColor(Color.parseColor("#0f161e"));
+        view.setWebViewClient(new WebViewClient() {
             @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
                 // Stay on the scanner sites; anything else (ads, store links) goes to the unit's browser.
                 Uri url = request.getUrl();
                 String host = url.getHost() == null ? "" : url.getHost();
@@ -97,8 +103,27 @@ final class RadioDrawer {
                 openExternal(url);
                 return true;
             }
+
+            @Override
+            public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) {
+                // Low memory killed the renderer. Without this the whole app would die;
+                // instead the drawer closes and gets a fresh WebView for next time.
+                Log.w(TAG, "Radio renderer gone, crashed=" + detail.didCrash());
+                replaceWeb();
+                return true;
+            }
         });
-        root.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(view, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        return view;
+    }
+
+    private void replaceWeb() {
+        root.removeView(web);
+        web.destroy();
+        web = createWeb();
+        root.setVisibility(View.GONE);
+        report(0);
+        if (onClosed != null) onClosed.run();
     }
 
     /** The view to add to the activity's layout, docked at the bottom. */

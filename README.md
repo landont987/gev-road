@@ -16,7 +16,9 @@ drops the 3D globe, which is too heavy for the unit.
 - **Drive mode:** four big buttons, big speed, map locked to the truck.
 - **Radio:** police, fire and highway patrol while you drive, three ways:
   - *Live calls, played here:* Phoenix Police precinct dispatch, Phoenix Fire, DPS freeways, Chandler, Avondale and Sky Harbor, played inside the app from the Broadcastify Calls API (needs the prepaid keys below plus your Broadcastify login, typed once into the app).
-  - *Public feeds:* 27 Broadcastify and OpenMHz feeds for Phoenix and Tucson, nearest first. Each opens that site's own page in a drawer over the map (their terms do not allow pulling the audio into another app); press play on their page, fold the drawer with HIDE and the audio keeps going.
+  - *Live public safety feeds:* 24 Broadcastify and OpenMHz feeds for Phoenix and Tucson, nearest first, live only (delayed feeds are left out). Each opens that site's own page in a drawer over the map (their terms do not allow pulling the audio into another app); press play on their page, fold the drawer with HIDE and the audio keeps going.
+  - *Every feed in this county:* one button opens Broadcastify's full list for the county the truck is in (police, fire, ham repeaters, GMRS, rail, weather, with who is online). The county comes from the FCC census lookup, or the nearest county center when offline.
+  - *Radio stations near me:* Arizona internet radio stations from the public-domain Radio Browser directory, nearest first, played right in the page.
   - *My scanner:* an MP3 stream from your own receiver (RTL-SDR plus trunk-recorder, SDRTrunk or OP25), played right in the page.
 
 ## Data sources (all checked live on 2026-10-06)
@@ -32,6 +34,8 @@ drops the 3D globe, which is too heavy for the unit.
 | Cameras (fresh list) | AZ511 API `api/v2/get/cameras` | free AZ511 developer key, 10 calls a minute |
 | Live calls | Broadcastify Calls Client API `api.bcfy.io` | app key id, secret and app id from bcfy.io/dev (prepaid, from $5) plus a Broadcastify login |
 | Public feeds | Broadcastify feed pages and OpenMHz system pages, opened as-is | none |
+| County feed list | Broadcastify county pages, opened as-is; county from `geo.fcc.gov/api/census/area` | none |
+| Radio stations | Radio Browser `de1.api.radio-browser.info` (PDDL directory); streams straight from each broadcaster | none |
 
 Not used, and why: CARTO dark tiles now need a key. AZ511's `/list/getdata/`
 and `/map/map*/` paths are blocked by its robots.txt, so camera lists come from

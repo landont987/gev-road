@@ -4,6 +4,8 @@
 // list on 2026-10-06. Listener counts and "online" change daily; the pages
 // themselves show the current state when they open.
 //
+// Live only: feeds that run on a delay (Tempe PD's one-hour feeds, DPS D4) are
+// left out on purpose.
 // Both sites only allow listening on their own pages or apps, so the app opens
 // the page itself (in the radio drawer on the truck, a new tab on a computer).
 // It never pulls the audio into its own player; that is what their terms forbid.
@@ -11,6 +13,27 @@
 
 export const BROADCASTIFY_FEED_URL = 'https://www.broadcastify.com/listen/feed/';
 export const OPENMHZ_SYSTEM_URL = 'https://openmhz.com/system/';
+export const BROADCASTIFY_COUNTY_URL = 'https://www.broadcastify.com/listen/ctid/';
+
+// Every Arizona county on Broadcastify (ids read from broadcastify.com/listen/stid/4
+// on 2026-10-06) with a rough center, used only when the county lookup is offline.
+export const COUNTIES = [
+  { ctid: 100, name: 'Maricopa', lat: 33.5, lon: -112.3 },
+  { ctid: 103, name: 'Pima', lat: 32.1, lon: -111.8 },
+  { ctid: 104, name: 'Pinal', lat: 32.9, lon: -111.3 },
+  { ctid: 106, name: 'Yavapai', lat: 34.6, lon: -112.5 },
+  { ctid: 95, name: 'Coconino', lat: 35.8, lon: -111.8 },
+  { ctid: 96, name: 'Gila', lat: 33.8, lon: -110.8 },
+  { ctid: 101, name: 'Mohave', lat: 35.7, lon: -113.8 },
+  { ctid: 107, name: 'Yuma', lat: 32.8, lon: -113.9 },
+  { ctid: 99, name: 'La Paz', lat: 33.7, lon: -113.9 },
+  { ctid: 94, name: 'Cochise', lat: 31.9, lon: -109.8 },
+  { ctid: 105, name: 'Santa Cruz', lat: 31.5, lon: -110.8 },
+  { ctid: 97, name: 'Graham', lat: 32.9, lon: -109.9 },
+  { ctid: 98, name: 'Greenlee', lat: 33.2, lon: -109.2 },
+  { ctid: 102, name: 'Navajo', lat: 35.4, lon: -110.3 },
+  { ctid: 93, name: 'Apache', lat: 35.4, lon: -109.5 },
+];
 
 /** area: where the feed is strongest, used to sort by distance from the truck. */
 export const FEEDS = [
@@ -120,33 +143,6 @@ export const FEEDS = [
     name: 'Mesa, Gilbert and Queen Creek Fire',
     group: 'East Valley',
     area: { lat: 33.38, lon: -111.75 },
-  },
-  {
-    id: 'bcfy-41733',
-    kind: 'broadcastify',
-    feed: 41733,
-    name: 'Tempe Police: North patrol',
-    group: 'East Valley',
-    area: { lat: 33.43, lon: -111.93 },
-    note: 'Official Tempe PD feed, one hour behind live (their radios are encrypted).',
-  },
-  {
-    id: 'bcfy-41734',
-    kind: 'broadcastify',
-    feed: 41734,
-    name: 'Tempe Police: South patrol',
-    group: 'East Valley',
-    area: { lat: 33.37, lon: -111.93 },
-    note: 'Official Tempe PD feed, one hour behind live.',
-  },
-  {
-    id: 'bcfy-41735',
-    kind: 'broadcastify',
-    feed: 41735,
-    name: 'Tempe Police: Mill Avenue downtown',
-    group: 'East Valley',
-    area: { lat: 33.43, lon: -111.94 },
-    note: 'Official Tempe PD feed, one hour behind live. Only on weekend nights and special events.',
   },
   {
     id: 'omhz-florence',

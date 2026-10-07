@@ -117,6 +117,7 @@ function applySettings() {
   if (map.getZoom() > maxZoom) map.setZoom(maxZoom, { animate: false });
   cameras.setEnabled(settings.cameras);
   plates.setEnabled(settings.plates);
+  radio.onLowData(settings.lowData);
   traffic.setEnabled(settings.traffic && !settings.lowData);
   cameras.refresh();
   if (settings.drive) {
