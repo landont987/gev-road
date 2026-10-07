@@ -150,6 +150,6 @@ export function apiErrorText(status, bodyText) {
   }
   if (status === 401) return 'Anthropic refused the key. Check "anthropic" in keys.local.json.';
   if (/credit balance/i.test(message)) return 'Your Anthropic account is out of credit.';
-  if (status === 429) return 'Anthropic says too many checks right now. It tries again shortly.';
+  if (status === 429) return 'Anthropic says too many checks right now. It tries again later.';
   return `Anthropic answered HTTP ${status}${message ? `: ${message.slice(0, 120)}` : ''}.`;
 }

@@ -39,6 +39,7 @@ export function createTruckCheck(deps) {
   let stoppedSince = null;
   let checkedThisStop = false;
   let retriesThisStop = 0;
+  let retryNotBefore = 0; // the one retry waits a minute, even if another camera is in range
   let running = false;
   let last = null; // { cam, at, result?, picture?, offline?, error? }
   let reference; // undefined: not loaded yet; null: no photo bundled
@@ -164,6 +165,7 @@ export function createTruckCheck(deps) {
           // A blip, not this camera's fault: one more try in a minute at this same stop.
           retriesThisStop++;
           checkedAt[cam.id] = Date.now() - CAMERA_COOLDOWN_MS + RETRY_AFTER_FAILURE_MS;
+          retryNotBefore = Date.now() + RETRY_AFTER_FAILURE_MS;
           checkedThisStop = false;
         }
         if (!manual) warn(err);
@@ -220,6 +222,7 @@ export function createTruckCheck(deps) {
         stoppedSince = null;
         checkedThisStop = false;
         retriesThisStop = 0;
+        retryNotBefore = 0;
         return;
       }
       if (fix.speed >= STOPPED_MPS) {
@@ -227,7 +230,8 @@ export function createTruckCheck(deps) {
         return;
       }
       if (stoppedSince === null) stoppedSince = Date.now();
-      if (checkedThisStop || running || Date.now() - stoppedSince < STOP_SETTLE_MS || blocker()) return;
+      if (checkedThisStop || running || Date.now() - stoppedSince < STOP_SETTLE_MS) return;
+      if (Date.now() < retryNotBefore || blocker()) return;
       const cam = nearestCamera(fix, false);
       if (!cam) return;
       checkedThisStop = true;

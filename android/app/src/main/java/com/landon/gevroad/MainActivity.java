@@ -203,7 +203,8 @@ public class MainActivity extends Activity {
 
             @Override
             public void onLost(Network net) {
-                everValidated = false; // the next network gets its own chance to validate
+                // everValidated stays: the truck always rejoins the same phone hotspot, so a
+                // return without validation (the phone has no data) is still offline.
                 report(false);
             }
 
