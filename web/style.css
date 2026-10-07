@@ -358,13 +358,9 @@ body.drive #status .speed {
   font-size: 64px;
 }
 
+/* OpenStreetMap's land color, so tiles still loading do not flash dark. */
 .leaflet-container {
-  background: var(--bg);
-}
-/* Night colors for the light OpenStreetMap tiles. */
-.basemap-dark {
-  -webkit-filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9);
-  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9);
+  background: #f2efe9;
 }
 .leaflet-control-attribution {
   background: rgba(11, 15, 20, 0.7) !important;

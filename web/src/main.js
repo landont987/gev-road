@@ -38,7 +38,6 @@ const map = L.map('map', {
 
 const basemap = L.tileLayer(BASEMAP_URL, {
   maxZoom: BASEMAP_MAX_ZOOM,
-  className: 'basemap-dark',
   attribution: BASEMAP_ATTRIBUTION,
   updateWhenIdle: true,
   keepBuffer: settings.lowData ? 0 : 1,

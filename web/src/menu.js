@@ -1,6 +1,15 @@
-// The ☰ menu: where the location comes from, the demo drive, data use, credits.
+// The ☰ menu: where the location comes from, the demo drive, data use, versions, credits.
 
 import { el, openSheet, closeSheet, toast } from './ui.js';
+
+/** "GEV Road 0.1.0 · WebView 66": the WebView number shows whether a Play Store update took. */
+export function versionText(ua) {
+  const app = /GEVRoad\/([\w.]+)/.exec(ua);
+  const webview = /Chrome\/(\d+)/.exec(ua);
+  return [app ? `GEV Road ${app[1]}` : '', webview ? `WebView ${webview[1]}` : 'WebView version unknown']
+    .filter(Boolean)
+    .join(' · ');
+}
 
 /** app: { gps, traffic, routing, dataText() } */
 export function openMenu(app) {
@@ -46,6 +55,9 @@ export function openMenu(app) {
       app.traffic.hasKey() ? 'Traffic key: set.' : 'Traffic key: not set yet. Live traffic needs your free TomTom key.',
     ),
   );
+
+  body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'VERSION')));
+  body.appendChild(el('p', { class: 'sheet-sub' }, versionText(navigator.userAgent)));
 
   body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'CREDITS')));
   body.appendChild(

@@ -6,8 +6,8 @@ export const KEYS = typeof __KEYS__ === 'object' && __KEYS__ ? __KEYS__ : {};
 
 // OpenStreetMap's standard tiles: no key, light personal use allowed by the
 // OSMF tile policy (the Android app sends its own User-Agent). CARTO's dark
-// tiles now answer "API KEY REQUIRED", so they are not used. The app darkens
-// these tiles with a CSS filter for night driving.
+// tiles now answer "API KEY REQUIRED", so they are not used. The tiles are
+// shown as they come: a CSS darkening filter costs too much on the head unit.
 export const BASEMAP_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const BASEMAP_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 export const BASEMAP_MAX_ZOOM = 19;

@@ -25,7 +25,7 @@ drops the 3D globe, which is too heavy for the unit.
 
 | What | Source | Key |
 |---|---|---|
-| Map | OpenStreetMap standard tiles, darkened in the app | none (OSMF tile policy: light use, app identifies itself) |
+| Map | OpenStreetMap standard tiles, shown as they come (no darkening filter, to keep the head unit fast) | none (OSMF tile policy: light use, app identifies itself) |
 | Cameras | ADOT list via AZGeo `ADOT_cameras` FeatureServer; pictures from `az511.com/map/Cctv/<id>` | none |
 | Plate readers | `tiles.dontgetflocked.com` hourly OSM extract (DeFlock) | none |
 | Directions | OSRM at `routing.openstreetmap.de` (FOSSGIS) | none |
@@ -80,6 +80,10 @@ The APK lands in `android/app/build/outputs/apk/release/app-release.apk`.
 2. On the head unit, open the file manager, open the USB drive, tap the APK.
 3. If Android blocks it, allow "Install unknown apps" for the file manager when it asks.
 4. Open GEV Road and allow location.
+5. For speed: in the Play Store, update "Android System WebView" and, if it is
+   installed, "Google Chrome" (on Android 9 either one can be what draws the
+   app). Reopen GEV Road; ☰ → VERSION shows the WebView number. 66 is from
+   2018; 138 is the newest Android 9 can get (Chrome 139 needs Android 10).
 
 ## Credits
 
