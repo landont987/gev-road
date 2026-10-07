@@ -99,7 +99,7 @@ final class RadioDrawer {
                 // Stay on the scanner sites; anything else (ads, store links) goes to the unit's browser.
                 Uri url = request.getUrl();
                 String host = url.getHost() == null ? "" : url.getHost();
-                if (host.endsWith("broadcastify.com") || host.endsWith("openmhz.com")) return false;
+                if (isScannerHost(host)) return false;
                 openExternal(url);
                 return true;
             }
@@ -151,7 +151,7 @@ final class RadioDrawer {
     void open(String url, String name) {
         Uri uri = Uri.parse(url);
         String host = uri.getHost() == null ? "" : uri.getHost();
-        if (!"https".equals(uri.getScheme()) || !(host.endsWith("broadcastify.com") || host.endsWith("openmhz.com"))) {
+        if (!"https".equals(uri.getScheme()) || !isScannerHost(host)) {
             Log.w(TAG, "Refused radio url " + url);
             return;
         }
@@ -219,6 +219,14 @@ final class RadioDrawer {
         } catch (RuntimeException e) {
             Log.w(TAG, "No browser for " + url, e);
         }
+    }
+
+    /** The two scanner sites and their subdomains, nothing that merely ends in their name. */
+    private static boolean isScannerHost(String host) {
+        for (String domain : new String[] {"broadcastify.com", "openmhz.com"}) {
+            if (host.equals(domain) || host.endsWith("." + domain)) return true;
+        }
+        return false;
     }
 
     private int screenHeight() {
