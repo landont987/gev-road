@@ -26,6 +26,7 @@ export function createRouting(map, app) {
   let pin = null;
   let offCount = 0;
   let offRouteSpoken = false;
+  let rerouteFailSpoken = false; // once per time off route, like offRouteSpoken
   let routedAt = 0;
   let alongM = null; // where the truck was on the route at the last fix
   let generation = 0; // bumped by every new route request and by END: late answers are dropped
@@ -85,7 +86,11 @@ export function createRouting(map, app) {
       if (mine !== generation) return;
       console.warn('route:', err);
       if (err.noRoute) toast('No road route to that spot. Try a point on a road.');
-      else if (quiet) toast('Re-route failed. Still showing the old route.');
+      else if (quiet) {
+        toast('Re-route failed. Still showing the old route.');
+        if (!rerouteFailSpoken) app.say('trip', 'Could not find a new route. Check the hotspot.');
+        rerouteFailSpoken = true;
+      }
       else toast('Could not get directions. Check the hotspot and try again.');
       return;
     }
@@ -116,7 +121,10 @@ export function createRouting(map, app) {
     render(p);
     if (fix.accuracy > POOR_FIX_M) return;
     offCount = p.offM > OFF_ROUTE_M ? offCount + 1 : 0;
-    if (offCount === 0) offRouteSpoken = false; // back on the line
+    if (offCount === 0) {
+      offRouteSpoken = false; // back on the line
+      rerouteFailSpoken = false;
+    }
     if (offCount >= OFF_ROUTE_FIXES && Date.now() - routedAt > REROUTE_MIN_GAP_MS) {
       toast('Off route. Finding a new one...');
       // Said once per time off route; a failed re-route tries again quietly.

@@ -152,6 +152,10 @@ test('apiErrorText explains the usual Anthropic failures plainly', () => {
 });
 
 test('isPermanentApiError stops retries only for errors a retry cannot fix', () => {
-  for (const s of [400, 401, 403, 404, 413]) assert.equal(isPermanentApiError(s), true, String(s));
-  for (const s of [429, 500, 502, 529]) assert.equal(isPermanentApiError(s), false, String(s));
+  for (const s of [401, 403, 404]) assert.equal(isPermanentApiError(s, ''), true, String(s));
+  const noCredit = '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}';
+  assert.equal(isPermanentApiError(400, noCredit), true, 'out of credit');
+  const badImage = '{"type":"error","error":{"type":"invalid_request_error","message":"Could not process image"}}';
+  assert.equal(isPermanentApiError(400, badImage), false, 'one bad camera frame');
+  for (const s of [413, 429, 500, 502, 529]) assert.equal(isPermanentApiError(s, ''), false, String(s));
 });

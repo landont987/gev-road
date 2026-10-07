@@ -29,6 +29,8 @@ const HEADER_CHARS = 8192; // base64 characters decoded to read the picture size
 const REFERENCE_URL = 'truck.jpg'; // the driver's photo, bundled from truck.local.jpg
 const CAMERA_COOLDOWN_MS = 15 * 60 * 1000; // stop-and-go by one camera checks it once
 const REWARN_MS = 10 * 60 * 1000; // a temporary failure is shown again after this long
+const RETRY_AFTER_FAILURE_MS = 60 * 1000; // a temporary failure at a camera is retried after this long
+const FIX_MAX_AGE_MS = 5000; // CHECK NOW needs a current position
 
 /** deps: { app: { isMoving(), isLowData(), isOnline() }, cameras, voice, settings } */
 export function createTruckCheck(deps) {
@@ -43,10 +45,7 @@ export function createTruckCheck(deps) {
   const warnedAt = {}; // error text -> when it was last shown
 
   function blocker() {
-    if (!settings.truckCheck) {
-      stoppedReason = ''; // switching it off and on again retries
-      return 'The AI truck check is off.';
-    }
+    if (!settings.truckCheck) return 'The AI truck check is off.';
     if (stoppedReason) return `Stopped: ${stoppedReason} Switch AI TRUCK CHECK off and on to try again.`;
     if (!KEYS.anthropic) return 'The AI truck check needs your Anthropic key.';
     if (!hasNativeRequest()) return 'The AI truck check runs in the Android app only.';
@@ -116,7 +115,7 @@ export function createTruckCheck(deps) {
       .then(({ res, text }) => {
         if (!res.ok) {
           const err = new Error(apiErrorText(res.status, text));
-          err.permanent = isPermanentApiError(res.status);
+          err.permanent = isPermanentApiError(res.status, text);
           throw err;
         }
         let json;
@@ -137,7 +136,7 @@ export function createTruckCheck(deps) {
 
   function run(cam, manual) {
     running = true;
-    if (!manual) checkedAt[cam.id] = Date.now();
+    checkedAt[cam.id] = Date.now(); // a manual check also counts, so no automatic one follows it
     const done = () => {
       running = false;
       if (manual) toast(lastText(), 8000);
@@ -157,7 +156,13 @@ export function createTruckCheck(deps) {
       .catch((err) => {
         last = { cam, at: Date.now(), error: err.message };
         console.warn(`truck check: ${err.message}`);
-        if (err.permanent) stoppedReason = err.message;
+        if (err.permanent) {
+          stoppedReason = err.message;
+        } else {
+          // A blip, not this camera's fault: try it again in a minute, even at this same stop.
+          checkedAt[cam.id] = Date.now() - CAMERA_COOLDOWN_MS + RETRY_AFTER_FAILURE_MS;
+          checkedThisStop = false;
+        }
         if (!manual) warn(err);
       })
       .then(done, done);
@@ -206,7 +211,8 @@ export function createTruckCheck(deps) {
 
   return {
     onFix(fix) {
-      if (fix.speed === null) return; // cannot tell stopped from moving
+      // Automatic checks cost money, so only the real truck's GPS triggers them, never the demo.
+      if (fix.source !== 'truck' || fix.speed === null) return; // speed null: cannot tell stopped from moving
       if (fix.speed >= MOVING_SPEED_MPS) {
         stoppedSince = null;
         checkedThisStop = false;
@@ -224,11 +230,16 @@ export function createTruckCheck(deps) {
       run(cam, false);
     },
     /** The CHECK NOW button: the nearest camera, right away. */
-    checkNow(fix) {
-      const why = blocker() || (running ? 'A check is already running.' : '') || (!fix ? 'No GPS fix yet.' : '');
+    checkNow(fix, fixAt) {
+      const why =
+        blocker() ||
+        (running ? 'A check is already running.' : '') ||
+        (!fix || Date.now() - fixAt > FIX_MAX_AGE_MS ? 'No current GPS position.' : '') ||
+        (!cameras.list().length ? 'The camera list has not loaded yet. Check the hotspot.' : '');
       if (why) return why;
       const cam = nearestCamera(fix, true);
       if (!cam) return 'No ADOT camera within 300 m.';
+      checkedThisStop = true;
       run(cam, true);
       return `Checking ${cam.name}...`;
     },
@@ -236,6 +247,10 @@ export function createTruckCheck(deps) {
     refresh() {
       const box = document.getElementById('truck-picture');
       if (box && openSheetKind() === 'truck') renderPicture(box);
+    },
+    /** The switch was turned back on: forget a permanent error and try again at the next stop. */
+    retry() {
+      stoppedReason = '';
     },
     showLast,
     lastText,

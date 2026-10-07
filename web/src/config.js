@@ -65,7 +65,8 @@ export const DRIVE_ZOOM = 16;
 export const LOW_DATA_MAX_ZOOM = 15;
 
 // Spoken alerts: OpenAI text to speech with your key in keys.local.json ("openai").
-// Without a key, offline, or in low data mode, the unit's own voice speaks instead.
+// Clips are cached (they play offline); a new alert without a key or internet
+// uses the unit's own voice.
 export const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
 export const OPENAI_TTS_MODEL = 'gpt-4o-mini-tts';
 

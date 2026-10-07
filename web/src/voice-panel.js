@@ -12,7 +12,7 @@ const SWITCHES = [
   ['sayLink', 'LOST GPS OR INTERNET'],
 ];
 
-/** ctx: { settings, save(), voice, truckCheck, lastFix() } */
+/** ctx: { settings, save(), voice, truckCheck, lastFix(), lastFixAt() } */
 export function openVoicePanel(ctx) {
   const { settings, save, voice, truckCheck } = ctx;
   const body = openSheet('voice', 'Voice and alerts');
@@ -25,6 +25,7 @@ export function openVoicePanel(ctx) {
     };
     button.addEventListener('click', () => {
       settings[name] = !settings[name];
+      if (name === 'truckCheck' && settings[name]) truckCheck.retry();
       save();
       paint();
     });
@@ -50,6 +51,8 @@ export function openVoicePanel(ctx) {
   }
 
   body.appendChild(toggle('voice', 'VOICE ALERTS'));
+  // A problem toast can be covered by the next one; this keeps it visible.
+  for (const problem of voice.problems()) body.appendChild(el('div', { class: 'note warn' }, problem));
 
   body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'SAY OUT LOUD')));
   for (const [name, label] of SWITCHES) body.appendChild(toggle(name, label));
@@ -89,7 +92,7 @@ export function openVoicePanel(ctx) {
   });
   body.appendChild(el('p', { class: 'sheet-sub' }, `Last check: ${truckCheck.lastText()}`));
   body.appendChild(
-    el('button', { class: 'pill wide', onclick: () => toast(truckCheck.checkNow(ctx.lastFix()), 6000) }, 'CHECK THE NEAREST CAMERA NOW'),
+    el('button', { class: 'pill wide', onclick: () => toast(truckCheck.checkNow(ctx.lastFix(), ctx.lastFixAt()), 6000) }, 'CHECK THE NEAREST CAMERA NOW'),
   );
   body.appendChild(el('button', { class: 'pill wide', onclick: () => truckCheck.showLast() }, 'SHOW THE LAST CHECK'));
 }

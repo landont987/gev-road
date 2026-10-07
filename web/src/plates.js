@@ -34,6 +34,8 @@ export function createPlates(map) {
     // The map moves every second while following, so a failed tile waits
     // before it is asked for again instead of hammering a dead hotspot.
     if (failedAt[key] && Date.now() - failedAt[key] < TILE_RETRY_MS) {
+      // Plate readers rarely move: an expired tile beats an empty one.
+      if (hit) return Promise.resolve(hit.records);
       return Promise.reject(new Error(`plate tile ${key} failed recently`));
     }
     const url = ALPR_TILE_URL.replace('{z}', t.z).replace('{x}', t.x).replace('{y}', t.y);

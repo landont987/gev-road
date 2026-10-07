@@ -31,18 +31,18 @@ const PROBLEMS = {
 /** settings: the live settings object */
 export function createVoice(settings) {
   window.gevOnSpeaking = (on) => duck(!!on);
+  const problems = []; // shown in the VOICE panel too, since a toast can be covered
   // The app reports each problem once per run.
   window.gevOnVoiceProblem = (what) => {
+    let text = PROBLEMS[what];
     if (what === 'no-engine') {
-      toast(
-        KEYS.openai
-          ? 'No built-in voice on this unit, so new alerts are silent when offline. Install "Speech Services by Google" from the Play Store.'
-          : 'No voice on this unit. Install "Speech Services by Google" from the Play Store, or add an OpenAI key.',
-        9000,
-      );
-    } else if (PROBLEMS[what]) {
-      toast(PROBLEMS[what], 9000);
+      text = KEYS.openai
+        ? 'No built-in voice on this unit, so new alerts are silent when offline. Install "Speech Services by Google" from the Play Store.'
+        : 'No voice on this unit. Install "Speech Services by Google" from the Play Store, or add an OpenAI key.';
     }
+    if (!text) return;
+    if (problems.indexOf(text) < 0) problems.push(text);
+    toast(text, 9000);
   };
 
   const hasNativeVoice = () => !!(window.GevNative && typeof window.GevNative.speak === 'function');
@@ -75,5 +75,6 @@ export function createVoice(settings) {
       if (settings.voice) say(text);
     },
     sample: () => say(SAMPLE),
+    problems: () => problems.slice(),
   };
 }

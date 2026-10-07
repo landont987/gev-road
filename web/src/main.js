@@ -55,7 +55,8 @@ let lastFix = null;
 let lastFixAt = 0;
 let moving = false;
 let online = true; // until the app says otherwise
-let visibleSince = Date.now(); // the GPS is stopped while the app is in the background
+let appVisible = true; // the GPS is stopped while the app is in the background
+let visibleSince = Date.now();
 
 const app = {
   isMoving: () => moving,
@@ -66,7 +67,9 @@ const app = {
       ? { lat: lastFix.lat, lon: lastFix.lon, fromGps: true }
       : { lat: map.getCenter().lat, lon: map.getCenter().lng, fromGps: false },
   isFollowing: () => truck.isFollowing(),
-  isOnline: () => online,
+  // Live from the app: "connected", which some head units report even when
+  // their internet check never passes. A failed request is reported anyway.
+  isOnline: () => (window.GevNative && typeof window.GevNative.isOnline === 'function' ? !!window.GevNative.isOnline() : online),
   say: (kind, text) => voice.alert(kind, text),
 };
 
@@ -110,6 +113,7 @@ if (window.GevNative && typeof window.GevNative.isOnline === 'function') {
   window.addEventListener('offline', () => onNetwork(false));
 }
 window.gevOnAppVisible = (visible) => {
+  appVisible = !!visible;
   if (visible) visibleSince = Date.now();
 };
 
@@ -145,7 +149,7 @@ function updateStatus() {
     voice.alert('trip', 'This app has used over 100 megabytes of hotspot data.');
   }
   const silentFor = Date.now() - Math.max(lastFixAt, visibleSince);
-  if (!gpsLostSpoken && lastFix && lastFix.source === 'truck' && silentFor > GPS_LOST_MS) {
+  if (appVisible && !gpsLostSpoken && lastFix && lastFix.source === 'truck' && silentFor > GPS_LOST_MS) {
     gpsLostSpoken = true;
     voice.alert('link', 'GPS signal lost.');
   }
@@ -199,8 +203,13 @@ function onFix(raw) {
   }
   truck.update(fix);
   routing.update(fix);
-  alerts.onFix(fix);
-  truckCheck.onFix(fix);
+  // Add-ons must never stop the speed, the moving flag or the status from updating.
+  try {
+    alerts.onFix(fix);
+    truckCheck.onFix(fix);
+  } catch (err) {
+    console.warn('alerts:', err);
+  }
   const nowMoving = fix.speed !== null && fix.speed >= MOVING_SPEED_MPS;
   if (nowMoving !== moving) {
     moving = nowMoving;
@@ -239,7 +248,7 @@ $('btn-radio').addEventListener('click', () => radio.openList());
 $('btn-zoom-in').addEventListener('click', () => map.zoomIn(1, { animate: false }));
 $('btn-zoom-out').addEventListener('click', () => map.zoomOut(1, { animate: false }));
 function openVoice() {
-  openVoicePanel({ settings, save: applySettings, voice, truckCheck, lastFix: () => lastFix });
+  openVoicePanel({ settings, save: applySettings, voice, truckCheck, lastFix: () => lastFix, lastFixAt: () => lastFixAt });
 }
 $('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, openVoice }));
 $('btn-recenter').addEventListener('click', () => truck.setFollowing(true));

@@ -38,6 +38,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * One full-screen WebView showing the bundled map page (assets/web), plus the
@@ -52,6 +53,7 @@ public class MainActivity extends Activity {
     private static final long GPS_INTERVAL_MS = 1000;
     // A saved fix older than this is not shown as the truck's position.
     private static final long LAST_FIX_MAX_AGE_MS = 30000;
+    private static final Pattern KEY_IN_URL = Pattern.compile("([?&](?:key|api_key|apikey|token))=[^&\\s\"']+");
 
     private WebView web;
     private RadioDrawer radio;
@@ -59,6 +61,7 @@ public class MainActivity extends Activity {
     private ConnectivityManager connectivity;
     private ConnectivityManager.NetworkCallback networkWatch;
     private Boolean lastOnline;
+    private boolean everValidated;
     private boolean rendererGone;
     private LocationManager locations;
     private long rxAtStart;
@@ -133,7 +136,10 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri url = request.getUrl();
-                if ("https".equals(url.getScheme()) && APP_HOST.equals(url.getHost())) return false;
+                // Authority, not host: "evil\\@appassets..." must not pass as our own page.
+                String raw = url.toString();
+                if ("https".equals(url.getScheme()) && APP_HOST.equals(url.getAuthority())
+                        && raw.indexOf('\\') < 0) return false;
                 // Credit links open in the unit's browser, never inside the map.
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, url));
@@ -158,7 +164,9 @@ public class MainActivity extends Activity {
         web.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onConsoleMessage(ConsoleMessage message) {
-                Log.i(TAG, "page " + message.messageLevel() + ": " + message.message()
+                // Network errors print the full URL, and some carry a key (?key=...).
+                String text = KEY_IN_URL.matcher(message.message()).replaceAll("$1=REDACTED");
+                Log.i(TAG, "page " + message.messageLevel() + ": " + text
                         + " (" + message.sourceId() + ":" + message.lineNumber() + ")");
                 return true;
             }
@@ -185,7 +193,11 @@ public class MainActivity extends Activity {
         networkWatch = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onCapabilitiesChanged(Network net, NetworkCapabilities caps) {
-                report(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+                boolean validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+                // Some head units never pass Android's internet check. Until one has,
+                // "not validated" says nothing, so only a lost network counts as offline.
+                if (validated) everValidated = true;
+                if (validated || everValidated) report(validated);
             }
 
             @Override

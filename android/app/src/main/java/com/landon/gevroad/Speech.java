@@ -184,11 +184,15 @@ final class Speech {
         engine.shutdown();
     }
 
-    /** True when the current network has working internet (also used by the page at startup). */
+    /**
+     * True when connected to a network that offers internet. Not "validated":
+     * some head units never pass Android's internet check, and a failed request
+     * is handled anyway. Also used by the page (AI truck check, startup state).
+     */
     boolean isOnline() {
         Network active = network.getActiveNetwork();
         NetworkCapabilities caps = active == null ? null : network.getNetworkCapabilities(active);
-        return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+        return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
     }
 
     private void speakNow(String text, String aiUrl, String aiKey, String aiBody, int gen) {
@@ -217,6 +221,12 @@ final class Speech {
         NativeHttp.BytesResult res = NativeHttp.requestBytes(
                 "POST", url, headers, body.getBytes(StandardCharsets.UTF_8), AI_TIMEOUT_MS);
         if (res.status == 0) {
+            if (new String(res.body, StandardCharsets.UTF_8).startsWith("refused:")) {
+                // The app itself refused it (say, a stray character in the key): retrying cannot help.
+                Log.w(TAG, "AI voice request refused by the app");
+                turnAiOff("ai-request-rejected");
+                return null;
+            }
             Log.w(TAG, "AI voice unreachable; the built-in voice speaks for a minute");
             aiPausedUntil = SystemClock.elapsedRealtime() + AI_PAUSE_MS;
             return null;
@@ -250,7 +260,7 @@ final class Speech {
             part.delete();
             return null;
         }
-        prune();
+        prune(clip);
         return clip;
     }
 
@@ -259,15 +269,17 @@ final class Speech {
         report(why);
     }
 
-    private void prune() {
-        File[] files = clips.listFiles((dir, name) -> name.endsWith(".mp3"));
-        if (files == null || files.length <= MAX_CACHED_CLIPS) return;
+    /** Keeps the newest clips. Never deletes keep: a unit with a wrong clock can date it "oldest". */
+    private void prune(File keep) {
+        File[] files = clips.listFiles((dir, name) -> name.endsWith(".mp3") && !name.equals(keep.getName()));
+        if (files == null || files.length < MAX_CACHED_CLIPS) return;
         Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-        for (int i = 0; i < files.length - MAX_CACHED_CLIPS; i++) files[i].delete();
+        for (int i = 0; i <= files.length - MAX_CACHED_CLIPS; i++) files[i].delete();
     }
 
     /** Duck other audio, play, restore. False when the clip would not play (caller falls back). */
     private boolean playWithFocus(File clip) {
+        if (!clip.isFile()) return false; // gone from the cache: not the unit's fault, so not a play failure
         AudioFocusRequest focus = focusRequest();
         if (audio.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             Log.w(TAG, "audio focus refused (a phone call?); skipping this alert");

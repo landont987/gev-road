@@ -21,6 +21,7 @@ export function createCameras(map, app) {
   let loading = null;
   let all = []; // every camera, for the spoken alerts and the AI truck check
   let failedAt = 0;
+  let enabled = false;
   let current = null; // camera whose sheet is open
   let picture = null; // <img> currently loading or shown
   let pictureTimer = null;
@@ -158,9 +159,12 @@ export function createCameras(map, app) {
 
   return {
     setEnabled(on) {
+      // applySettings calls this on every switch; only turning CAMERAS on loads (and may toast).
+      const turnedOn = on && !enabled;
+      enabled = on;
       if (on) {
         group.addTo(map);
-        load(true);
+        if (turnedOn) load(true);
       } else {
         map.removeLayer(group);
       }

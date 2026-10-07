@@ -131,11 +131,12 @@ export function base64FromBytes(bytes) {
 
 /**
  * Errors that will not fix themselves at the next stop: a refused key, no
- * credit, an unknown model, a request Anthropic rejects. 429 and 5xx are
- * temporary.
+ * credit, an unknown model. Any other 400 (say, one corrupt camera frame), 413,
+ * 429 and 5xx are about this picture or this moment.
  */
-export function isPermanentApiError(status) {
-  return status === 400 || status === 401 || status === 403 || status === 404 || status === 413;
+export function isPermanentApiError(status, bodyText) {
+  if (status === 401 || status === 403 || status === 404) return true;
+  return status === 400 && /credit balance/i.test(bodyText || '');
 }
 
 /** A short, plain reason from an Anthropic error answer. */
