@@ -10,7 +10,7 @@
   --accent-ink: #04212a;
   --warn: #f2b13c;
   --alpr: #ff4d5e;
-  --btn-h: calc((100vh - 24px) / 6 - 8px);
+  --btn-h: calc((100vh - 24px) / 7 - 8px);
 }
 
 [hidden] {
@@ -350,7 +350,7 @@ body.drive .explore-only {
   display: none !important;
 }
 body.drive .rbtn {
-  height: calc((100vh - 24px) / 3 - 8px);
+  height: calc((100vh - 24px) / 4 - 8px);
   max-height: 140px;
   font-size: 19px;
 }
@@ -373,4 +373,39 @@ body.drive #status .speed {
 }
 .leaflet-control-attribution a {
   color: var(--muted) !important;
+}
+
+/* Radio list */
+.result-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--warn);
+}
+.result.on {
+  border-color: var(--accent);
+}
+.pill.stop {
+  background: var(--warn);
+  color: #241600;
+  border-color: var(--warn);
+}
+.calls-line {
+  margin: 0 0 10px;
+  font-size: 16px;
+  color: var(--accent);
+  min-height: 20px;
+}
+.calls-line span {
+  color: var(--muted);
+}
+
+/* The Android radio drawer sets --drawer to its height while it is up. */
+:root {
+  --drawer: 0px;
+}
+#btn-recenter {
+  bottom: calc(28px + var(--drawer));
+}
+#toast {
+  bottom: calc(110px + var(--drawer));
 }

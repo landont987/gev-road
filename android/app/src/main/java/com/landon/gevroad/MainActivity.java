@@ -19,9 +19,12 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import androidx.webkit.WebViewAssetLoader;
+
+import org.json.JSONObject;
 
 import java.util.Locale;
 
@@ -37,6 +40,7 @@ public class MainActivity extends Activity {
     private static final long GPS_INTERVAL_MS = 1000;
 
     private WebView web;
+    private RadioDrawer radio;
     private LocationManager locations;
     private long rxAtStart;
     private long txAtStart;
@@ -106,7 +110,17 @@ public class MainActivity extends Activity {
             }
         });
         web.addJavascriptInterface(new Bridge(), "GevNative");
-        setContentView(web);
+
+        // The map fills the screen; the radio drawer docks over its bottom part.
+        FrameLayout root = new FrameLayout(this);
+        root.addView(web, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        radio = new RadioDrawer(this);
+        radio.setOnClosed(() -> web.evaluateJavascript("window.gevOnRadioClosed&&window.gevOnRadioClosed()", null));
+        radio.setOnLayout((heightPx) -> web.evaluateJavascript(
+                "window.gevOnRadioLayout&&window.gevOnRadioLayout(" + heightPx + ")", null));
+        root.addView(radio.view(), radio.layoutParams());
+        setContentView(root);
         web.loadUrl(START_URL);
     }
 
@@ -131,6 +145,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopGps();
+        radio.destroy();
         web.destroy();
         super.onDestroy();
     }
@@ -177,6 +192,33 @@ public class MainActivity extends Activity {
 
     /** Methods the page can call as window.GevNative.*. */
     private class Bridge {
+        /** Show a scanner page (Broadcastify or OpenMHz only) in the radio drawer. */
+        @JavascriptInterface
+        public void radioOpen(String url, String name) {
+            runOnUiThread(() -> radio.open(url, name == null ? "Radio" : name));
+        }
+
+        /** Unload the scanner page and hide the drawer. */
+        @JavascriptInterface
+        public void radioClose() {
+            runOnUiThread(() -> radio.close());
+        }
+
+        /**
+         * One HTTPS request made by the app for the page (hosts limited in NativeHttp).
+         * The answer comes back through window.gevOnHttp(id, status, body).
+         */
+        @JavascriptInterface
+        public void http(final int id, final String method, final String url, final String authorization,
+                         final String contentType, final String body) {
+            new Thread(() -> {
+                NativeHttp.Result result = NativeHttp.request(method, url, authorization, contentType, body);
+                final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
+                        + JSONObject.quote(result.body) + ")";
+                runOnUiThread(() -> web.evaluateJavascript(js, null));
+            }, "gev-http-" + id).start();
+        }
+
         /** Bytes this app has sent and received since it opened, or -1 if the unit does not report it. */
         @JavascriptInterface
         public long dataBytes() {

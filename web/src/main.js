@@ -19,6 +19,7 @@ import { createCameras } from './cameras.js';
 import { createPlates } from './plates.js';
 import { createTraffic } from './traffic.js';
 import { createRouting } from './routing.js';
+import { createRadio } from './radio.js';
 import { openMenu } from './menu.js';
 
 const settings = loadSettings();
@@ -62,6 +63,8 @@ const cameras = createCameras(map, renderer, app);
 const plates = createPlates(map, renderer);
 const traffic = createTraffic(map);
 const routing = createRouting(map, app);
+const radio = createRadio(app);
+radio.onChange((playingId) => setOn($('btn-radio'), !!playingId));
 
 function dataBytes() {
   if (!window.GevNative) return null;
@@ -160,6 +163,7 @@ $('btn-traffic').addEventListener('click', () => {
   toggle('traffic')();
 });
 $('btn-route').addEventListener('click', () => routing.openSearch());
+$('btn-radio').addEventListener('click', () => radio.openList());
 $('btn-zoom-in').addEventListener('click', () => map.zoomIn(1, { animate: false }));
 $('btn-zoom-out').addEventListener('click', () => map.zoomOut(1, { animate: false }));
 $('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText }));

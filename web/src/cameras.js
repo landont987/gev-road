@@ -3,12 +3,13 @@
 // truck is stopped, and never in low data mode.
 
 import L from 'leaflet';
-import { AZ_CAMERAS_URL, CAMERA_LIST_TTL_MS } from './config.js';
-import { parseAzCameras } from './parse.js';
+import { KEYS, AZ_CAMERAS_URL, AZ511_API_CAMERAS_URL, AZ511_IMAGE_URL, CAMERA_LIST_TTL_MS } from './config.js';
+import { parseAzCameras, parseAz511Api } from './parse.js';
 import { readCache, writeCache } from './settings.js';
 import { el, openSheet, openSheetKind, toast, fetchWithTimeout } from './ui.js';
 
-const CACHE_KEY = 'gev-road-az-cameras';
+// Two caches, so adding or removing the key never shows the other list.
+const CACHE_KEY = KEYS.az511 ? 'gev-road-az511-cameras' : 'gev-road-az-cameras';
 const PICTURE_TIMEOUT_MS = 20000;
 const OFFLINE_CARD = { w: 540, h: 330 }; // measured on offline cameras 1215 and 1217, 2026-10-06
 
@@ -21,14 +22,17 @@ export function createCameras(map, renderer, app) {
   let pictureTimer = null;
   let pictureBox = null;
 
+  // With your AZ511 key the list is ADOT's own and up to date; without it,
+  // the AZGeo copy (last edited 2026-03-16) still works with no key at all.
   function fetchList() {
-    return fetchWithTimeout(AZ_CAMERAS_URL, 20000)
+    const url = KEYS.az511 ? `${AZ511_API_CAMERAS_URL}${encodeURIComponent(KEYS.az511)}` : AZ_CAMERAS_URL;
+    return fetchWithTimeout(url, 20000)
       .then((res) => {
         if (!res.ok) throw new Error(`camera list HTTP ${res.status}`);
         return res.json();
       })
       .then((json) => {
-        const cams = parseAzCameras(json);
+        const cams = KEYS.az511 ? parseAz511Api(json, AZ511_IMAGE_URL) : parseAzCameras(json);
         if (cams.length === 0) throw new Error('camera list came back empty');
         writeCache(CACHE_KEY, cams);
         return cams;

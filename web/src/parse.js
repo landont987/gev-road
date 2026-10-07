@@ -65,3 +65,33 @@ export function parsePlaces(json) {
       return { title, detail, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] };
     });
 }
+
+/**
+ * ADOT camera rows from the keyed AZ511 API (api/v2/get/cameras). Rows look like
+ * { Id, Latitude, Longitude, Location, Roadway, Direction, Views: [{ Id, Status, Url }] }
+ * (shape taken from the Leeway-Maps iteris511 adapter and its tests; the key page
+ * was not readable without an account). Only "Enabled" views with a numeric id are
+ * kept; the picture is always fetched from az511.com by that id, never from Url.
+ */
+export function parseAz511Api(json, imageBase) {
+  const rows = Array.isArray(json) ? json : (json && json.cameras) || [];
+  const cameras = [];
+  for (const row of rows) {
+    if (!row) continue;
+    const lat = Number(row.Latitude);
+    const lon = Number(row.Longitude);
+    const views = Array.isArray(row.Views) ? row.Views : [];
+    const view = views.filter((v) => v && String(v.Status || '').toLowerCase() === 'enabled' && /^\d+$/.test(String(v.Id)))[0];
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !view) continue;
+    cameras.push({
+      id: String(view.Id),
+      lat,
+      lon,
+      road: row.Roadway || '',
+      direction: row.Direction || '',
+      name: row.Location || row.Roadway || 'ADOT camera',
+      imageUrl: `${imageBase}${view.Id}`,
+    });
+  }
+  return cameras;
+}

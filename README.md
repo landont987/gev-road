@@ -13,7 +13,11 @@ drops the 3D globe, which is too heavy for the unit.
 - **Plate readers:** license plate reader locations mapped by OpenStreetMap volunteers.
 - **Traffic:** live congestion colors (needs a free TomTom key).
 - **Low data:** turns off traffic and camera pictures and stops the map zooming past street level, to save the hotspot. A banner suggests it after 100 MB.
-- **Drive mode:** three big buttons, big speed, map locked to the truck.
+- **Drive mode:** four big buttons, big speed, map locked to the truck.
+- **Radio:** police, fire and highway patrol while you drive, three ways:
+  - *Live calls, played here:* Phoenix Police precinct dispatch, Phoenix Fire, DPS freeways, Chandler, Avondale and Sky Harbor, played inside the app from the Broadcastify Calls API (needs the prepaid keys below plus your Broadcastify login, typed once into the app).
+  - *Public feeds:* 27 Broadcastify and OpenMHz feeds for Phoenix and Tucson, nearest first. Each opens that site's own page in a drawer over the map (their terms do not allow pulling the audio into another app); press play on their page, fold the drawer with HIDE and the audio keeps going.
+  - *My scanner:* an MP3 stream from your own receiver (RTL-SDR plus trunk-recorder, SDRTrunk or OP25), played right in the page.
 
 ## Data sources (all checked live on 2026-10-06)
 
@@ -25,6 +29,9 @@ drops the 3D globe, which is too heavy for the unit.
 | Directions | OSRM at `routing.openstreetmap.de` (FOSSGIS) | none |
 | Search | Photon at `photon.komoot.io` | none |
 | Traffic | TomTom flow tiles | free key, not yet verified |
+| Cameras (fresh list) | AZ511 API `api/v2/get/cameras` | free AZ511 developer key, 10 calls a minute |
+| Live calls | Broadcastify Calls Client API `api.bcfy.io` | app key id, secret and app id from bcfy.io/dev (prepaid, from $5) plus a Broadcastify login |
+| Public feeds | Broadcastify feed pages and OpenMHz system pages, opened as-is | none |
 
 Not used, and why: CARTO dark tiles now need a key. AZ511's `/list/getdata/`
 and `/map/map*/` paths are blocked by its robots.txt, so camera lists come from
@@ -35,8 +42,19 @@ the state's AZGeo copy (and later the official AZ511 API with a key).
 Put keys in `keys.local.json` (never committed):
 
 ```json
-{ "tomtom": "your-key" }
+{
+  "tomtom": "your-key",
+  "az511": "your-az511-developer-key",
+  "bcfyKeyId": "key id from bcfy.io/dev",
+  "bcfySecret": "key secret from bcfy.io/dev",
+  "bcfyAppId": "app id from bcfy.io/dev"
+}
 ```
+
+Every key is optional. Without `az511` the camera list is the AZGeo copy (last
+edited 2026-03-16). Without the three `bcfy` values the LIVE CALLS section only
+shows a note. The Calls API endpoints and token format are copied from working
+open source clients; the first run with a real key is the proof.
 
 ## Build
 
@@ -63,5 +81,6 @@ The APK lands in `android/app/build/outputs/apk/release/app-release.apk`.
 
 Map data © OpenStreetMap contributors. Cameras: ADOT / AZ511. Plate reader
 locations: OpenStreetMap volunteers via DeFlock. Routing: OSRM / FOSSGIS.
-Search: Photon by komoot. Traffic: TomTom. Map library: Leaflet.
+Search: Photon by komoot. Traffic: TomTom. Radio: Broadcastify and OpenMHz
+volunteer feeds, Broadcastify Calls. Map library: Leaflet.
 Data source choices from God's Eye View by Bilawal Sidhu (MIT).

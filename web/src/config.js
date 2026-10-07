@@ -17,6 +17,12 @@ export const AZ_CAMERAS_URL =
   'https://services6.arcgis.com/clPWQMwZfdWn4MQZ/arcgis/rest/services/ADOT_cameras/FeatureServer/0/query' +
   '?where=1%3D1&outFields=Id,Roadway,Direction,Location,Views&outSR=4326&f=json';
 
+// ADOT's own list, fresh, with your free AZ511 developer key in keys.local.json
+// (sign up at az511.com; 10 calls a minute). Used instead of the copy above
+// when the key is set, because the copy was last edited 2026-03-16.
+export const AZ511_API_CAMERAS_URL = 'https://az511.com/api/v2/get/cameras?format=json&key=';
+export const AZ511_IMAGE_URL = 'https://az511.com/map/Cctv/';
+
 // Hourly OpenStreetMap extract of license plate reader cameras (DeFlock).
 export const ALPR_TILE_URL = 'https://tiles.dontgetflocked.com/cameras-us-hourly/{z}/{x}/{y}.mvt';
 export const ALPR_MIN_TILE_ZOOM = 9;
@@ -30,6 +36,16 @@ export const SEARCH_URL = 'https://photon.komoot.io/api/';
 // key before the path, so the style name cannot be probed without one.
 export const TRAFFIC_URL = 'https://api.tomtom.com/traffic/map/4/tile/flow/relative0-dark/{z}/{x}/{y}.png';
 export const TRAFFIC_REFRESH_MS = 5 * 60 * 1000;
+
+// Broadcastify Calls Client API (bcfy.io/dev): recorded radio calls, metered,
+// prepaid, scanner-style listening apps allowed for one metro. Needs the app's
+// key id, secret and app id in keys.local.json plus your Broadcastify login,
+// typed into the app. Endpoints and token format copied from working open
+// source clients (ifnull/radio-feed-watch, arjohnsonn/austin-incident-map).
+export const BCFY_AUTH_URL = 'https://api.bcfy.io/common/v1/auth';
+export const BCFY_LIVE_URL = 'https://api.bcfy.io/calls/v1/live/';
+export const BCFY_POLL_MS = 6000;
+export const BCFY_TOKEN_TTL_S = 3600;
 
 export const CAMERA_LIST_TTL_MS = 24 * 60 * 60 * 1000;
 export const ALPR_TILE_TTL_MS = 60 * 60 * 1000;

@@ -16,7 +16,14 @@ export function readKeys() {
   const file = path.join(root, 'keys.local.json');
   if (!fs.existsSync(file)) return {};
   const keys = JSON.parse(fs.readFileSync(file, 'utf8'));
-  return { tomtom: typeof keys.tomtom === 'string' ? keys.tomtom.trim() : '' };
+  const read = (name) => (typeof keys[name] === 'string' ? keys[name].trim() : '');
+  return {
+    tomtom: read('tomtom'),
+    az511: read('az511'),
+    bcfyKeyId: read('bcfyKeyId'),
+    bcfySecret: read('bcfySecret'),
+    bcfyAppId: read('bcfyAppId'),
+  };
 }
 
 export const buildOptions = {
