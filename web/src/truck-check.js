@@ -30,6 +30,7 @@ const REFERENCE_URL = 'truck.jpg'; // the driver's photo, bundled from truck.loc
 const CAMERA_COOLDOWN_MS = 15 * 60 * 1000; // stop-and-go by one camera checks it once
 const REWARN_MS = 10 * 60 * 1000; // a temporary failure is shown again after this long
 const RETRY_AFTER_FAILURE_MS = 60 * 1000; // a temporary failure at a camera is retried after this long
+const MAX_RETRIES_PER_STOP = 1; // then it waits for the next stop, so a lasting outage costs little
 const FIX_MAX_AGE_MS = 5000; // CHECK NOW needs a current position
 
 /** deps: { app: { isMoving(), isLowData(), isOnline() }, cameras, voice, settings } */
@@ -37,6 +38,7 @@ export function createTruckCheck(deps) {
   const { app, cameras, voice, settings } = deps;
   let stoppedSince = null;
   let checkedThisStop = false;
+  let retriesThisStop = 0;
   let running = false;
   let last = null; // { cam, at, result?, picture?, offline?, error? }
   let reference; // undefined: not loaded yet; null: no photo bundled
@@ -156,10 +158,11 @@ export function createTruckCheck(deps) {
       .catch((err) => {
         last = { cam, at: Date.now(), error: err.message };
         console.warn(`truck check: ${err.message}`);
-        if (err.permanent) {
+        if (err.permanent || err.message.indexOf('the app blocked this request') === 0) {
           stoppedReason = err.message;
-        } else {
-          // A blip, not this camera's fault: try it again in a minute, even at this same stop.
+        } else if (!manual && retriesThisStop < MAX_RETRIES_PER_STOP) {
+          // A blip, not this camera's fault: one more try in a minute at this same stop.
+          retriesThisStop++;
           checkedAt[cam.id] = Date.now() - CAMERA_COOLDOWN_MS + RETRY_AFTER_FAILURE_MS;
           checkedThisStop = false;
         }
@@ -216,6 +219,7 @@ export function createTruckCheck(deps) {
       if (fix.speed >= MOVING_SPEED_MPS) {
         stoppedSince = null;
         checkedThisStop = false;
+        retriesThisStop = 0;
         return;
       }
       if (fix.speed >= STOPPED_MPS) {

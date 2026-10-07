@@ -203,12 +203,16 @@ function onFix(raw) {
   }
   truck.update(fix);
   routing.update(fix);
-  // Add-ons must never stop the speed, the moving flag or the status from updating.
+  // Add-ons must never stop the speed, the moving flag, the status or each other.
   try {
     alerts.onFix(fix);
-    truckCheck.onFix(fix);
   } catch (err) {
     console.warn('alerts:', err);
+  }
+  try {
+    truckCheck.onFix(fix);
+  } catch (err) {
+    console.warn('truck check:', err);
   }
   const nowMoving = fix.speed !== null && fix.speed >= MOVING_SPEED_MPS;
   if (nowMoving !== moving) {

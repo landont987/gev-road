@@ -21,6 +21,7 @@ const SAMPLE = 'This is your GEV Road voice. Plate reader ahead.';
 
 const PROBLEMS = {
   'ai-key-refused': 'OpenAI refused the key, so the unit\'s own voice speaks until the app restarts. Check "openai" in keys.local.json.',
+  'ai-key-invalid': 'The OpenAI key has a character that cannot be sent, so the unit\'s own voice speaks until the app restarts. Check "openai" in keys.local.json.',
   'ai-out-of-credit': 'Your OpenAI account is out of credit, so the unit\'s own voice speaks until the app restarts.',
   'ai-request-rejected': 'OpenAI rejected the voice request, so the unit\'s own voice speaks until the app restarts.',
   'ai-audio-failed': 'This unit could not play the AI voice, so its own voice speaks until the app restarts.',

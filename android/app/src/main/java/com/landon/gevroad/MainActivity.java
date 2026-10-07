@@ -166,8 +166,9 @@ public class MainActivity extends Activity {
             public boolean onConsoleMessage(ConsoleMessage message) {
                 // Network errors print the full URL, and some carry a key (?key=...).
                 String text = KEY_IN_URL.matcher(message.message()).replaceAll("$1=REDACTED");
+                String source = KEY_IN_URL.matcher(message.sourceId()).replaceAll("$1=REDACTED");
                 Log.i(TAG, "page " + message.messageLevel() + ": " + text
-                        + " (" + message.sourceId() + ":" + message.lineNumber() + ")");
+                        + " (" + source + ":" + message.lineNumber() + ")");
                 return true;
             }
         });
@@ -195,13 +196,14 @@ public class MainActivity extends Activity {
             public void onCapabilitiesChanged(Network net, NetworkCapabilities caps) {
                 boolean validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
                 // Some head units never pass Android's internet check. Until one has,
-                // "not validated" says nothing, so only a lost network counts as offline.
+                // a network that is there counts as online; only a lost one is offline.
                 if (validated) everValidated = true;
-                if (validated || everValidated) report(validated);
+                report(everValidated ? validated : true);
             }
 
             @Override
             public void onLost(Network net) {
+                everValidated = false; // the next network gets its own chance to validate
                 report(false);
             }
 

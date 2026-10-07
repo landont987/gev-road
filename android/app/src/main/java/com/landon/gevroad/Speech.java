@@ -66,8 +66,8 @@ final class Speech {
         /**
          * Called once per problem per app run:
          *  no-engine, no-english, tts-failed: the unit's own voice cannot speak;
-         *  ai-key-refused, ai-out-of-credit, ai-request-rejected, ai-audio-failed:
-         *  the AI voice is off until the app restarts.
+         *  ai-key-refused, ai-key-invalid, ai-out-of-credit, ai-request-rejected,
+         *  ai-audio-failed: the AI voice is off until the app restarts.
          */
         void onProblem(String what);
     }
@@ -155,7 +155,7 @@ final class Speech {
                     Log.w(TAG, "skipping an alert that waited too long");
                     return;
                 }
-                speakNow(text, aiUrl, aiKey, aiBody, gen);
+                speakNow(text, aiUrl, aiKey, aiBody, gen, queuedAt);
             } catch (RuntimeException e) {
                 Log.e(TAG, "speaking failed", e); // never take the app down for one alert
             }
@@ -195,13 +195,18 @@ final class Speech {
         return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
     }
 
-    private void speakNow(String text, String aiUrl, String aiKey, String aiBody, int gen) {
+    private void speakNow(String text, String aiUrl, String aiKey, String aiBody, int gen, long queuedAt) {
         File clip = aiBody.isEmpty() ? null : cachedClip(aiBody);
         boolean mayFetch = !aiKey.isEmpty() && !aiOff && SystemClock.elapsedRealtime() >= aiPausedUntil;
         if (clip == null && mayFetch && isOnline()) clip = fetchClip(aiUrl, aiKey, aiBody);
         if (gen != generation.get()) return;
         if (clip != null && playWithFocus(clip)) return;
         if (gen != generation.get()) return;
+        // A slow failed fetch (a stuck DNS lookup is not cut by the timeout) can make the alert late.
+        if (SystemClock.elapsedRealtime() - queuedAt > STALE_MS) {
+            Log.w(TAG, "skipping an alert that is too late to be useful");
+            return;
+        }
         speakBuiltIn(text);
     }
 
@@ -224,7 +229,7 @@ final class Speech {
             if (new String(res.body, StandardCharsets.UTF_8).startsWith("refused:")) {
                 // The app itself refused it (say, a stray character in the key): retrying cannot help.
                 Log.w(TAG, "AI voice request refused by the app");
-                turnAiOff("ai-request-rejected");
+                turnAiOff("ai-key-invalid");
                 return null;
             }
             Log.w(TAG, "AI voice unreachable; the built-in voice speaks for a minute");
