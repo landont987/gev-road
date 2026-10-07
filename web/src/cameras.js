@@ -13,12 +13,14 @@ import { dot } from './dots.js';
 const CACHE_KEY = KEYS.az511 ? 'gev-road-az511-cameras' : 'gev-road-az-cameras';
 const PICTURE_TIMEOUT_MS = 20000;
 const OFFLINE_CARD = { w: 540, h: 330 }; // measured on offline cameras 1215 and 1217, 2026-10-06
+const LIST_RETRY_MS = 60 * 1000; // background loads (spoken alerts) wait this long after a failure
 
 /** app: { isMoving(), isLowData() } */
 export function createCameras(map, app) {
   const group = L.layerGroup();
   let loading = null;
   let all = []; // every camera, for the spoken alerts and the AI truck check
+  let failedAt = 0;
   let current = null; // camera whose sheet is open
   let picture = null; // <img> currently loading or shown
   let pictureTimer = null;
@@ -41,11 +43,22 @@ export function createCameras(map, app) {
       });
   }
 
-  function load() {
+  /** fromSwitch: the CAMERAS button asked, so a failure is shown; background loads stay quiet. */
+  function load(fromSwitch) {
     if (loading) return loading;
+    if (!fromSwitch && Date.now() - failedAt < LIST_RETRY_MS) return Promise.resolve(0);
     const cached = readCache(CACHE_KEY, CAMERA_LIST_TTL_MS);
-    loading = (cached ? Promise.resolve(cached) : fetchList()).then(
+    const fresh = () =>
+      fetchList().catch((err) => {
+        // Cameras rarely move: yesterday's list beats no list.
+        const old = readCache(CACHE_KEY, Infinity);
+        if (!old) throw err;
+        console.warn('cameras: using the saved list; the fresh one failed:', err.message);
+        return old;
+      });
+    loading = (cached ? Promise.resolve(cached) : fresh()).then(
       (cams) => {
+        failedAt = 0;
         all = cams;
         for (const cam of cams) {
           dot(cam.lat, cam.lon, 'camera', () => show(cam)).addTo(group);
@@ -53,9 +66,10 @@ export function createCameras(map, app) {
         return cams.length;
       },
       (err) => {
-        loading = null; // allow a retry next time the layer is switched on
+        loading = null; // allow a retry: the switch at once, background loads after a minute
+        failedAt = Date.now();
         console.warn('cameras:', err);
-        toast('Could not load Arizona cameras. Check the hotspot, then switch CAMERAS off and on.');
+        if (fromSwitch) toast('Could not load Arizona cameras. Check the hotspot, then switch CAMERAS off and on.');
       },
     );
     return loading;
@@ -146,14 +160,14 @@ export function createCameras(map, app) {
     setEnabled(on) {
       if (on) {
         group.addTo(map);
-        load();
+        load(true);
       } else {
         map.removeLayer(group);
       }
     },
     /** Every camera, loading the list in the background if needed (also with the layer off). */
     list() {
-      load();
+      load(false);
       return all;
     },
     /** Moving or low data changed: hide a picture that is no longer allowed. */

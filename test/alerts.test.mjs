@@ -87,6 +87,33 @@ test('cameraPlace drops the direction so both sides of a road are one place', ()
   assert.equal(cameraPlace('SR-202 @Mesa Dr'), 'SR-202 @Mesa Dr');
 });
 
+// Real bundled speed cameras 6237189551, 6237189803 and 6237190254 sit within
+// about 50 m of each other in Tempe.
+test('a cluster of same-kind spots speaks once, not once per camera', () => {
+  const cluster = [
+    Object.assign({ id: '6237189551', kind: 'speed', maxspeedMph: 40 }, offset(300, 0)),
+    Object.assign({ id: '6237189803', kind: 'speed', maxspeedMph: 40 }, offset(300, -45)),
+    Object.assign({ id: '6237190254', kind: 'speed', maxspeedMph: 40 }, offset(345, 0)),
+  ];
+  let spoken = {};
+  const said = [];
+  for (let north = -200; north <= 400; north += 20) {
+    const fix = Object.assign({}, offset(north, 0), { bearing: 0, speed: 20 });
+    const r = dueAlerts(cluster, fix, spoken);
+    spoken = r.spoken;
+    r.alerts.forEach((a) => said.push(a.text));
+  }
+  assert.deepEqual(said, ['Speed camera ahead, 40 miles per hour.']);
+});
+
+test('different kinds side by side still each speak', () => {
+  const spots = [
+    Object.assign({ id: '1', kind: 'speed' }, offset(200, 0)),
+    Object.assign({ id: '2', kind: 'plate' }, offset(210, 0)),
+  ];
+  assert.equal(dueAlerts(spots, drivingNorth, {}).alerts.length, 2);
+});
+
 test('without a heading only very close spots count as ahead', () => {
   const near = Object.assign({ id: '1', kind: 'speed' }, offset(100, 0));
   const far = Object.assign({ id: '2', kind: 'speed' }, offset(200, 0));

@@ -55,6 +55,7 @@ let lastFix = null;
 let lastFixAt = 0;
 let moving = false;
 let online = true; // until the app says otherwise
+let visibleSince = Date.now(); // the GPS is stopped while the app is in the background
 
 const app = {
   isMoving: () => moving,
@@ -78,7 +79,7 @@ const traffic = createTraffic(map);
 const routing = createRouting(map, app);
 const radio = createRadio(app);
 radio.onChange((playingId) => setOn($('btn-radio'), !!playingId));
-const voice = createVoice(settings, app);
+const voice = createVoice(settings);
 const alerts = createAlerts({ cameras, plates, speedCameras: createSpeedCameras(), voice, settings });
 const truckCheck = createTruckCheck({ app, cameras, voice, settings });
 
@@ -95,8 +96,22 @@ function onNetwork(on) {
   }, NETWORK_SETTLE_MS);
 }
 window.gevOnNetwork = onNetwork;
-window.addEventListener('online', () => onNetwork(true));
-window.addEventListener('offline', () => onNetwork(false));
+if (window.GevNative && typeof window.GevNative.isOnline === 'function') {
+  // The app's own check ("has working internet") is the only source here: the
+  // browser's online event fires on any Wi-Fi, even a hotspot with no data.
+  try {
+    online = !!window.GevNative.isOnline();
+    spokenOnline = online;
+  } catch (err) {
+    console.warn('network state:', err);
+  }
+} else {
+  window.addEventListener('online', () => onNetwork(true));
+  window.addEventListener('offline', () => onNetwork(false));
+}
+window.gevOnAppVisible = (visible) => {
+  if (visible) visibleSince = Date.now();
+};
 
 function dataBytes() {
   if (!window.GevNative) return null;
@@ -129,7 +144,8 @@ function updateStatus() {
     toast('This app has used over 100 MB. Tap LOW DATA to save your hotspot.', 8000);
     voice.alert('trip', 'This app has used over 100 megabytes of hotspot data.');
   }
-  if (!gpsLostSpoken && lastFix && lastFix.source === 'truck' && Date.now() - lastFixAt > GPS_LOST_MS) {
+  const silentFor = Date.now() - Math.max(lastFixAt, visibleSince);
+  if (!gpsLostSpoken && lastFix && lastFix.source === 'truck' && silentFor > GPS_LOST_MS) {
     gpsLostSpoken = true;
     voice.alert('link', 'GPS signal lost.');
   }

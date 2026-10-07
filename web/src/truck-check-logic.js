@@ -89,20 +89,29 @@ function percentBox(box, size) {
   };
 }
 
-/** The Messages API answer -> { found, confidence, box (percent of the picture) | null, note }. */
+/**
+ * The Messages API answer -> { found, confidence, box (percent of the picture) | null, note }.
+ * Throws when Claude did not give a usable answer, so a non-answer is never
+ * shown as "your truck was not seen".
+ */
 export function parseTruckCheck(apiJson, size) {
+  const stop = apiJson && apiJson.stop_reason;
+  if (stop === 'refusal') throw new Error('Claude declined to look at this picture.');
+  if (stop === 'max_tokens') throw new Error("Claude's answer was cut off.");
   const blocks = (apiJson && Array.isArray(apiJson.content) && apiJson.content) || [];
   const text = blocks.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return NOT_FOUND;
-  let answer;
-  try {
-    answer = JSON.parse(text.slice(start, end + 1));
-  } catch (err) {
-    return NOT_FOUND;
+  let answer = null;
+  if (start >= 0 && end > start) {
+    try {
+      answer = JSON.parse(text.slice(start, end + 1));
+    } catch (err) {
+      answer = null;
+    }
   }
-  if (!answer || answer.found !== true) return NOT_FOUND;
+  if (!answer || typeof answer.found !== 'boolean') throw new Error("Claude's answer could not be read.");
+  if (!answer.found) return NOT_FOUND;
   return {
     found: true,
     confidence: CONFIDENCE[answer.confidence] ? answer.confidence : 'low',
@@ -118,6 +127,15 @@ export function base64FromBytes(bytes) {
     text += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
   }
   return btoa(text);
+}
+
+/**
+ * Errors that will not fix themselves at the next stop: a refused key, no
+ * credit, an unknown model, a request Anthropic rejects. 429 and 5xx are
+ * temporary.
+ */
+export function isPermanentApiError(status) {
+  return status === 400 || status === 401 || status === 403 || status === 404 || status === 413;
 }
 
 /** A short, plain reason from an Anthropic error answer. */

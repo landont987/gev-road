@@ -4,10 +4,12 @@
 
 import { dueAlerts, cameraPlace } from './alert-logic.js';
 import { distanceM } from './geo.js';
+import { toast } from './ui.js';
 
 const PLATE_RADIUS_M = 1500; // plate reader tiles fetched around the truck
 const PLATE_REFRESH_M = 500; // look again after moving this far...
 const PLATE_REFRESH_MS = 60 * 1000; // ...or after this long (tiles are cached)
+const PLATE_FAILS_TO_WARN = 3; // lookups in a row with no plate data before the driver is told
 
 /** deps: { cameras, plates, speedCameras, voice, settings } */
 export function createAlerts(deps) {
@@ -16,6 +18,7 @@ export function createAlerts(deps) {
   let plateSpots = [];
   let plateLook = null; // { lat, lon, at } of the last plate lookup
   let plateLoading = false;
+  let plateFails = 0;
   let cameraList = null;
   let cameraSpots = [];
 
@@ -26,8 +29,11 @@ export function createAlerts(deps) {
     plateLook = { lat: fix.lat, lon: fix.lon, at: Date.now() };
     plates
       .near(fix.lat, fix.lon, PLATE_RADIUS_M)
-      .then((records) => {
+      .then(({ records, failed }) => {
         plateSpots = records.map((r) => ({ id: r.id, kind: 'plate', lat: r.lat, lon: r.lon }));
+        // Every tile failed with nothing saved: plate alerts are blind until it loads.
+        plateFails = failed && !records.length ? plateFails + 1 : 0;
+        if (plateFails === PLATE_FAILS_TO_WARN) toast('Plate reader alerts cannot load right now. They come back on their own.', 8000);
       })
       .catch((err) => console.warn('plate alerts:', err))
       .then(() => {

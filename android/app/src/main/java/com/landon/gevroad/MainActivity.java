@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
     private ConnectivityManager connectivity;
     private ConnectivityManager.NetworkCallback networkWatch;
     private Boolean lastOnline;
+    private boolean rendererGone;
     private LocationManager locations;
     private long rxAtStart;
     private long txAtStart;
@@ -132,7 +133,7 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri url = request.getUrl();
-                if (APP_HOST.equals(url.getHost())) return false;
+                if ("https".equals(url.getScheme()) && APP_HOST.equals(url.getHost())) return false;
                 // Credit links open in the unit's browser, never inside the map.
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, url));
@@ -147,6 +148,7 @@ public class MainActivity extends Activity {
                 // Low memory can kill the page's process. Returning true keeps the app
                 // alive; the dead WebView cannot be reused, so rebuild the screen.
                 Log.e(TAG, "map page process gone (crashed=" + detail.didCrash() + "), restarting the screen");
+                rendererGone = true; // this WebView must not be used again
                 stopGps();
                 recreate();
                 return true;
@@ -168,9 +170,9 @@ public class MainActivity extends Activity {
         root.addView(web, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         radio = new RadioDrawer(this);
-        radio.setOnClosed(() -> web.evaluateJavascript("window.gevOnRadioClosed&&window.gevOnRadioClosed()", null));
-        radio.setOnLayout((heightPx) -> web.evaluateJavascript(
-                "window.gevOnRadioLayout&&window.gevOnRadioLayout(" + heightPx + ")", null));
+        radio.setOnClosed(() -> js("window.gevOnRadioClosed&&window.gevOnRadioClosed()"));
+        radio.setOnLayout((heightPx) -> js(
+                "window.gevOnRadioLayout&&window.gevOnRadioLayout(" + heightPx + ")"));
         root.addView(radio.view(), radio.layoutParams());
         setContentView(root);
         web.loadUrl(START_URL);
@@ -207,15 +209,17 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Runs page script unless the screen is already gone (callbacks can arrive late). */
+    /** Runs page script unless the screen or its page process is gone (callbacks can arrive late). */
     private void js(String code) {
-        if (!isDestroyed()) web.evaluateJavascript(code, null);
+        if (!isDestroyed() && !rendererGone) web.evaluateJavascript(code, null);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         web.onResume();
+        // The page keeps running in the background; it must not call the stopped GPS "lost".
+        js("window.gevOnAppVisible&&window.gevOnAppVisible(true)");
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             startGps();
         } else if (!askedForLocation) {
@@ -227,6 +231,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        js("window.gevOnAppVisible&&window.gevOnAppVisible(false)");
         stopGps();
         web.onPause();
         super.onPause();
@@ -283,7 +288,7 @@ public class MainActivity extends Activity {
                 loc.hasSpeed() ? loc.getSpeed() : -1f,
                 loc.hasBearing() ? loc.getBearing() : -1f,
                 loc.hasAccuracy() ? loc.getAccuracy() : -1f);
-        web.evaluateJavascript(js, null);
+        js(js);
     }
 
     /** Methods the page can call as window.GevNative.*. */
@@ -308,10 +313,16 @@ public class MainActivity extends Activity {
         public void http(final int id, final String method, final String url, final String authorization,
                          final String contentType, final String body) {
             new Thread(() -> {
-                NativeHttp.Result result = NativeHttp.request(method, url, authorization, contentType, body);
+                NativeHttp.Result result;
+                try {
+                    result = NativeHttp.request(method, url, authorization, contentType, body);
+                } catch (RuntimeException e) {
+                    Log.e(TAG, "request crashed", e);
+                    result = new NativeHttp.Result(0, "app error: " + e.getClass().getSimpleName());
+                }
                 final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
                         + JSONObject.quote(result.body) + ")";
-                runOnUiThread(() -> web.evaluateJavascript(js, null));
+                runOnUiThread(() -> js(js));
             }, "gev-http-" + id).start();
         }
 
@@ -328,7 +339,10 @@ public class MainActivity extends Activity {
                 try {
                     result = NativeHttp.request(method, url, headers(headersJson), body, base64, timeoutMs);
                 } catch (JSONException e) {
-                    result = new NativeHttp.Result(0, "bad headers: " + e.getMessage());
+                    result = new NativeHttp.Result(0, "refused: bad headers");
+                } catch (RuntimeException e) {
+                    Log.e(TAG, "request crashed", e);
+                    result = new NativeHttp.Result(0, "app error: " + e.getClass().getSimpleName());
                 }
                 final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
                         + JSONObject.quote(result.body) + ")";
@@ -348,6 +362,12 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void stopSpeaking() {
             speech.stop();
+        }
+
+        /** Whether the network has working internet right now (the page asks once at startup). */
+        @JavascriptInterface
+        public boolean isOnline() {
+            return speech.isOnline();
         }
 
         /** Bytes this app has sent and received since it opened, or -1 if the unit does not report it. */

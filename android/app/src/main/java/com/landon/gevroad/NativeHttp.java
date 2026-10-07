@@ -9,14 +9,17 @@ import org.conscrypt.Conscrypt;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.SSLContext;
@@ -24,6 +27,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
+import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -62,6 +66,9 @@ final class NativeHttp {
     };
     private static final int TIMEOUT_MS = 20000;
     private static final int MAX_TIMEOUT_MS = 90000;
+    /** The only request headers the page may set (lower case). */
+    private static final Set<String> HEADERS = new HashSet<>(Arrays.asList(
+            "authorization", "x-api-key", "anthropic-version", "content-type", "accept"));
     private static final int MAX_BODY = 2 * 1024 * 1024;
 
     private static Context appContext;
@@ -97,20 +104,23 @@ final class NativeHttp {
         appContext = context.getApplicationContext();
     }
 
-    static boolean allowed(String method, String urlText) {
-        try {
-            URL url = new URL(urlText);
-            if (!"https".equals(url.getProtocol())) return false;
-            for (String[] entry : ALLOWED) {
-                if (!entry[0].equals(url.getHost())) continue;
-                for (int i = 1; i < entry.length; i++) {
-                    if (entry[i].equals(method)) return true;
-                }
+    /**
+     * The parsed URL when this host and method may be called, else null. The
+     * request uses this same parsed URL, so the check and the connection can
+     * never disagree about the host (java.net.URL and OkHttp read a backslash
+     * differently).
+     */
+    static HttpUrl allowedUrl(String method, String urlText) {
+        HttpUrl url = urlText == null ? null : HttpUrl.parse(urlText);
+        if (url == null || !url.isHttps() || url.port() != 443) return null;
+        if (!url.username().isEmpty() || !url.password().isEmpty()) return null;
+        for (String[] entry : ALLOWED) {
+            if (!entry[0].equals(url.host())) continue;
+            for (int i = 1; i < entry.length; i++) {
+                if (entry[i].equals(method)) return url;
             }
-        } catch (IOException e) {
-            return false;
         }
-        return false;
+        return null;
     }
 
     static Result request(String method, String urlText, String authorization, String contentType, String body) {
@@ -131,15 +141,18 @@ final class NativeHttp {
 
     static BytesResult requestBytes(String method, String urlText, Map<String, String> headers, byte[] body,
                                     int timeoutMs) {
-        if (!allowed(method, urlText)) return failed("refused: host or method not allowed");
+        HttpUrl url = allowedUrl(method, urlText);
+        if (url == null) return failed("refused: host or method not allowed");
         try {
             Request.Builder req = new Request.Builder()
-                    .url(urlText)
+                    .url(url)
                     .header("User-Agent", "GEVRoad/" + BuildConfig.VERSION_NAME)
                     .header("Accept", "application/json");
             String contentType = "application/x-www-form-urlencoded";
             for (Map.Entry<String, String> h : headers.entrySet()) {
-                if ("Content-Type".equalsIgnoreCase(h.getKey())) contentType = h.getValue();
+                String name = h.getKey().toLowerCase(Locale.US);
+                if (!HEADERS.contains(name)) return failed("refused: header " + h.getKey() + " not allowed");
+                if ("content-type".equals(name)) contentType = h.getValue();
                 else req.header(h.getKey(), h.getValue());
             }
             RequestBody payload = body == null ? null : RequestBody.create(body, MediaType.parse(contentType));
@@ -148,8 +161,12 @@ final class NativeHttp {
                 ResponseBody resBody = res.body();
                 return new BytesResult(res.code(), readAll(resBody == null ? null : resBody.byteStream()));
             }
-        } catch (IOException | GeneralSecurityException | IllegalArgumentException e) {
-            Log.w(TAG, method + " " + urlText + " failed", e);
+        } catch (IllegalArgumentException e) {
+            // OkHttp's message can repeat a bad header's value, which may be a key: never log it.
+            Log.w(TAG, method + " " + url.host() + " refused a bad request (" + e.getClass().getSimpleName() + ")");
+            return failed("refused: a header or the body is not valid");
+        } catch (IOException | GeneralSecurityException e) {
+            Log.w(TAG, method + " " + url.host() + " failed", e);
             return failed("network: " + e.getMessage());
         }
     }
@@ -180,6 +197,7 @@ final class NativeHttp {
                 .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .writeTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .callTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .followRedirects(false)
                 .followSslRedirects(false)
                 .build();

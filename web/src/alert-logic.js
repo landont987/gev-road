@@ -16,6 +16,7 @@ const HEADING_MIN_SPEED_MPS = 1; // below this the GPS heading is noise
 const NO_HEADING_M = 120; // without a heading, only a spot this close counts as ahead
 const REARM_M = 1000; // a spot speaks again only after the truck has been this far from it
 const MAX_PER_FIX = 2;
+const CLUSTER_M = 150; // same-kind spots this close to a spoken one share its alert
 
 export function angleDiff(a, b) {
   const d = Math.abs(a - b) % 360;
@@ -102,8 +103,18 @@ export function dueAlerts(spots, fix, spoken) {
     due.push({ key, spot, d });
   }
   due.sort((a, b) => a.d - b.d);
-  const now = due.slice(0, MAX_PER_FIX);
-  for (const a of now) nextSpoken[a.key] = true;
+  const now = [];
+  for (const a of due) {
+    if (now.length >= MAX_PER_FIX) break;
+    if (nextSpoken[a.key]) continue; // covered by a neighbour chosen just above
+    now.push(a);
+    nextSpoken[a.key] = true;
+    // Three speed cameras on one corner are one warning, not three.
+    for (const key of Object.keys(nearest)) {
+      const other = nearest[key].spot;
+      if (other.kind === a.spot.kind && distanceM(other, a.spot) <= CLUSTER_M) nextSpoken[key] = true;
+    }
+  }
   return {
     alerts: now.map((a) => ({ key: a.key, kind: a.spot.kind, text: alertText(a.spot) })),
     spoken: nextSpoken,

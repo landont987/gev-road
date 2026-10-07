@@ -1,6 +1,7 @@
 // Spoken alerts. The Android app speaks them (Speech.java): the OpenAI voice
-// when there is a key, internet and low data is off; the unit's own voice
-// otherwise. On a computer the browser's voice stands in, for the mockup.
+// when there is a key (a cached clip even offline; a clip is about the size of
+// one map tile, so low data mode keeps it), the unit's own voice otherwise.
+// On a computer the browser's voice stands in, for the mockup.
 
 import { KEYS, OPENAI_TTS_URL } from './config.js';
 import { speechBody } from './voice-options.js';
@@ -18,29 +19,37 @@ const SWITCH = {
 };
 const SAMPLE = 'This is your GEV Road voice. Plate reader ahead.';
 
-/** settings: the live settings object; app: { isLowData() } */
-export function createVoice(settings, app) {
+const PROBLEMS = {
+  'ai-key-refused': 'OpenAI refused the key, so the unit\'s own voice speaks until the app restarts. Check "openai" in keys.local.json.',
+  'ai-out-of-credit': 'Your OpenAI account is out of credit, so the unit\'s own voice speaks until the app restarts.',
+  'ai-request-rejected': 'OpenAI rejected the voice request, so the unit\'s own voice speaks until the app restarts.',
+  'ai-audio-failed': 'This unit could not play the AI voice, so its own voice speaks until the app restarts.',
+  'no-english': 'The unit\'s voice has no US English. Install "Speech Services by Google" from the Play Store.',
+  'tts-failed': 'The unit\'s voice could not speak. Install "Speech Services by Google" from the Play Store.',
+};
+
+/** settings: the live settings object */
+export function createVoice(settings) {
   window.gevOnSpeaking = (on) => duck(!!on);
-  // The app reports each problem once.
+  // The app reports each problem once per run.
   window.gevOnVoiceProblem = (what) => {
-    if (what === 'ai-key-refused') {
-      toast('OpenAI refused the key, so the unit\'s own voice speaks until the app restarts. Check "openai" in keys.local.json.', 9000);
-    } else if (what === 'no-engine') {
+    if (what === 'no-engine') {
       toast(
         KEYS.openai
-          ? 'No built-in voice on this unit, so alerts are silent when offline. Install "Speech Services by Google" from the Play Store.'
+          ? 'No built-in voice on this unit, so new alerts are silent when offline. Install "Speech Services by Google" from the Play Store.'
           : 'No voice on this unit. Install "Speech Services by Google" from the Play Store, or add an OpenAI key.',
         9000,
       );
+    } else if (PROBLEMS[what]) {
+      toast(PROBLEMS[what], 9000);
     }
   };
 
   const hasNativeVoice = () => !!(window.GevNative && typeof window.GevNative.speak === 'function');
-  const usesAiVoice = () => !!KEYS.openai && !app.isLowData();
 
   function say(text) {
     if (hasNativeVoice()) {
-      const ai = usesAiVoice();
+      const ai = !!KEYS.openai;
       window.GevNative.speak(
         text,
         ai ? OPENAI_TTS_URL : '',
@@ -66,10 +75,5 @@ export function createVoice(settings, app) {
       if (settings.voice) say(text);
     },
     sample: () => say(SAMPLE),
-    stop() {
-      if (hasNativeVoice()) window.GevNative.stopSpeaking();
-      else if (window.speechSynthesis) window.speechSynthesis.cancel();
-    },
-    usesAiVoice,
   };
 }

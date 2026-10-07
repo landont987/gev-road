@@ -16,8 +16,9 @@ import {
   truckCheckBody,
   parseTruckCheck,
   apiErrorText,
+  isPermanentApiError,
 } from './truck-check-logic.js';
-import { el, openSheet, openSheetKind, toast } from './ui.js';
+import { el, openSheet, openSheetKind, toast, fetchWithTimeout } from './ui.js';
 
 const STOPPED_MPS = 0.5;
 const STOP_SETTLE_MS = 10000; // a stop this long, not a rolling slowdown
@@ -26,6 +27,8 @@ const PICTURE_TIMEOUT_MS = 20000;
 const AI_TIMEOUT_MS = 60000;
 const HEADER_CHARS = 8192; // base64 characters decoded to read the picture size
 const REFERENCE_URL = 'truck.jpg'; // the driver's photo, bundled from truck.local.jpg
+const CAMERA_COOLDOWN_MS = 15 * 60 * 1000; // stop-and-go by one camera checks it once
+const REWARN_MS = 10 * 60 * 1000; // a temporary failure is shown again after this long
 
 /** deps: { app: { isMoving(), isLowData(), isOnline() }, cameras, voice, settings } */
 export function createTruckCheck(deps) {
@@ -35,10 +38,16 @@ export function createTruckCheck(deps) {
   let running = false;
   let last = null; // { cam, at, result?, picture?, offline?, error? }
   let reference; // undefined: not loaded yet; null: no photo bundled
-  const warned = {};
+  let stoppedReason = ''; // a permanent error turns the check off until the switch is flipped
+  const checkedAt = {}; // camera id -> when it was last checked automatically
+  const warnedAt = {}; // error text -> when it was last shown
 
   function blocker() {
-    if (!settings.truckCheck) return 'The AI truck check is off.';
+    if (!settings.truckCheck) {
+      stoppedReason = ''; // switching it off and on again retries
+      return 'The AI truck check is off.';
+    }
+    if (stoppedReason) return `Stopped: ${stoppedReason} Switch AI TRUCK CHECK off and on to try again.`;
     if (!KEYS.anthropic) return 'The AI truck check needs your Anthropic key.';
     if (!hasNativeRequest()) return 'The AI truck check runs in the Android app only.';
     if (app.isLowData()) return 'Low data is on, so the AI truck check is off.';
@@ -46,10 +55,12 @@ export function createTruckCheck(deps) {
     return '';
   }
 
-  function nearestCamera(fix) {
+  /** Nearest camera within 300 m; automatic checks skip one checked in the last 15 minutes. */
+  function nearestCamera(fix, manual) {
     let best = null;
     let bestM = CHECK_RADIUS_M;
     for (const cam of cameras.list()) {
+      if (!manual && Date.now() - (checkedAt[cam.id] || 0) < CAMERA_COOLDOWN_MS) continue;
       const d = distanceM(fix, cam);
       if (d <= bestM) {
         best = cam;
@@ -61,12 +72,16 @@ export function createTruckCheck(deps) {
 
   function loadReference() {
     if (reference !== undefined) return Promise.resolve(reference);
-    return fetch(REFERENCE_URL)
+    return fetchWithTimeout(REFERENCE_URL, 10000)
       .then((res) => (res.ok ? res.arrayBuffer() : null))
       .then((buf) => (buf && buf.byteLength ? { base64: base64FromBytes(new Uint8Array(buf)), mediaType: 'image/jpeg' } : null))
-      .catch(() => null)
+      .catch((err) => {
+        // In the app a missing asset fails to load rather than answering 404.
+        console.warn(`truck check: truck photo did not load: ${err.message}`);
+        return null;
+      })
       .then((ref) => {
-        if (!ref) console.warn('truck check: no truck photo bundled, using the description only');
+        if (!ref) console.warn('truck check: no truck photo, using the description only');
         reference = ref;
         return ref;
       });
@@ -99,13 +114,34 @@ export function createTruckCheck(deps) {
     })
       .then((res) => res.text().then((text) => ({ res, text })))
       .then(({ res, text }) => {
-        if (!res.ok) throw new Error(apiErrorText(res.status, text));
-        return parseTruckCheck(JSON.parse(text), picture.size);
+        if (!res.ok) {
+          const err = new Error(apiErrorText(res.status, text));
+          err.permanent = isPermanentApiError(res.status);
+          throw err;
+        }
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          throw new Error("Claude's answer could not be read.");
+        }
+        return parseTruckCheck(json, picture.size);
       });
   }
 
-  function run(cam) {
+  function warn(err) {
+    if (Date.now() - (warnedAt[err.message] || 0) < REWARN_MS) return;
+    warnedAt[err.message] = Date.now();
+    toast(`AI truck check: ${err.message}`, 8000);
+  }
+
+  function run(cam, manual) {
     running = true;
+    if (!manual) checkedAt[cam.id] = Date.now();
+    const done = () => {
+      running = false;
+      if (manual) toast(lastText(), 8000);
+    };
     Promise.all([loadReference(), fetchPicture(cam)])
       .then(([ref, picture]) => {
         if (isOfflineCard(picture.size)) return { cam, offline: true };
@@ -121,14 +157,10 @@ export function createTruckCheck(deps) {
       .catch((err) => {
         last = { cam, at: Date.now(), error: err.message };
         console.warn(`truck check: ${err.message}`);
-        if (!warned[err.message]) {
-          warned[err.message] = true;
-          toast(`AI truck check: ${err.message}`, 8000);
-        }
+        if (err.permanent) stoppedReason = err.message;
+        if (!manual) warn(err);
       })
-      .then(() => {
-        running = false;
-      });
+      .then(done, done);
   }
 
   function renderPicture(box) {
@@ -186,18 +218,18 @@ export function createTruckCheck(deps) {
       }
       if (stoppedSince === null) stoppedSince = Date.now();
       if (checkedThisStop || running || Date.now() - stoppedSince < STOP_SETTLE_MS || blocker()) return;
-      const cam = nearestCamera(fix);
+      const cam = nearestCamera(fix, false);
       if (!cam) return;
       checkedThisStop = true;
-      run(cam);
+      run(cam, false);
     },
     /** The CHECK NOW button: the nearest camera, right away. */
     checkNow(fix) {
       const why = blocker() || (running ? 'A check is already running.' : '') || (!fix ? 'No GPS fix yet.' : '');
       if (why) return why;
-      const cam = nearestCamera(fix);
+      const cam = nearestCamera(fix, true);
       if (!cam) return 'No ADOT camera within 300 m.';
-      run(cam);
+      run(cam, true);
       return `Checking ${cam.name}...`;
     },
     /** Moving changed: hide or show the picture in an open result. */

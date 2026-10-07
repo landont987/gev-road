@@ -17,7 +17,15 @@ function onNativeAnswer(id, status, body) {
   if (!entry) return;
   delete pending[id];
   clearTimeout(entry.timer);
-  entry.resolve(makeResponse(status, body));
+  entry.resolve(makeResponse(status, body), body);
+}
+
+/** Why a status-0 answer never reached the server, in plain words. */
+function failureText(body) {
+  const text = typeof body === 'string' ? body : '';
+  if (text.indexOf('refused:') === 0) return `the app blocked this request (${text.slice(8).trim()})`;
+  if (text.indexOf('app error') === 0) return text;
+  return 'no answer from the network';
 }
 if (typeof window !== 'undefined') window.gevOnHttp = onNativeAnswer; // tests import this under node
 
@@ -41,8 +49,8 @@ function viaApp(timeoutMs, start) {
   return new Promise((resolve, reject) => {
     const id = nextId++;
     pending[id] = {
-      resolve: (res) => {
-        if (res.status === 0) reject(new Error('no answer from the network'));
+      resolve: (res, body) => {
+        if (res.status === 0) reject(new Error(failureText(body)));
         else resolve(res);
       },
       timer: setTimeout(() => {

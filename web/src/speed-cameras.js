@@ -14,7 +14,8 @@ const RETRY_MS = 10 * 60 * 1000;
 
 export function createSpeedCameras() {
   const cached = readCache(CACHE_KEY, SPEED_CAMERAS_TTL_MS);
-  let list = cached || BUNDLED.cameras;
+  // An expired download is still newer than the bundled list.
+  let list = cached || readCache(CACHE_KEY, Infinity) || BUNDLED.cameras;
   // A cache still inside its day counts as loaded now; the next launch after it
   // expires fetches again.
   let loadedAt = cached ? Date.now() : 0;

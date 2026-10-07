@@ -11,6 +11,7 @@ import {
   parseTruckCheck,
   base64FromBytes,
   apiErrorText,
+  isPermanentApiError,
 } from '../web/src/truck-check-logic.js';
 
 const fixture = (name) => new Uint8Array(fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));
@@ -108,17 +109,32 @@ test('parseTruckCheck finds the JSON inside extra words and clamps a box off the
   assert.deepEqual(r.box, { left: 93.75, top: 97.22, width: 6.25, height: 2.78 });
 });
 
-test('parseTruckCheck treats anything unclear as not found', () => {
+test('parseTruckCheck reads a clear "not found" and a low-confidence match', () => {
   const size = { width: 1280, height: 720 };
-  assert.equal(parseTruckCheck(answer('I am not sure.'), size).found, false);
-  assert.equal(parseTruckCheck(answer('{"found": "yes"}'), size).found, false);
-  assert.equal(parseTruckCheck({ content: [] }, size).found, false);
-  assert.equal(parseTruckCheck(null, size).found, false);
+  assert.deepEqual(parseTruckCheck(answer('{"found": false, "confidence": "high", "box": null, "note": "No pickups."}'), size), {
+    found: false,
+    confidence: 'low',
+    box: null,
+    note: '',
+  });
   const noBox = parseTruckCheck(answer('{"found": true, "confidence": "low", "box": null, "note": "maybe"}'), size);
   assert.deepEqual(noBox, { found: true, confidence: 'low', box: null, note: 'maybe' });
   assert.equal(parseTruckCheck(answer('{"found": true, "confidence": "sure", "box": [1,2]}'), size).confidence, 'low');
 });
 
+test('parseTruckCheck throws when the AI did not really answer, so it is never shown as "not seen"', () => {
+  const size = { width: 1280, height: 720 };
+  assert.throws(() => parseTruckCheck(answer('I am not sure.'), size), /could not be read/);
+  assert.throws(() => parseTruckCheck(answer('{"found": "yes"}'), size), /could not be read/);
+  assert.throws(() => parseTruckCheck(answer('{"found": tru'), size), /could not be read/);
+  assert.throws(() => parseTruckCheck({ content: [] }, size), /could not be read/);
+  assert.throws(() => parseTruckCheck(null, size), /could not be read/);
+  assert.throws(
+    () => parseTruckCheck({ content: [{ type: 'text', text: '{"found": false, "note": "cut' }], stop_reason: 'max_tokens' }, size),
+    /cut off/,
+  );
+  assert.throws(() => parseTruckCheck({ content: [], stop_reason: 'refusal' }, size), /declined/);
+});
 
 test('base64FromBytes matches Node and survives more than one chunk', () => {
   const bytes = new Uint8Array(70000).map((_, i) => (i * 7) % 256);
@@ -133,4 +149,9 @@ test('apiErrorText explains the usual Anthropic failures plainly', () => {
   );
   assert.match(apiErrorText(429, ''), /too many checks/);
   assert.equal(apiErrorText(500, 'not json'), 'Anthropic answered HTTP 500.');
+});
+
+test('isPermanentApiError stops retries only for errors a retry cannot fix', () => {
+  for (const s of [400, 401, 403, 404, 413]) assert.equal(isPermanentApiError(s), true, String(s));
+  for (const s of [429, 500, 502, 529]) assert.equal(isPermanentApiError(s), false, String(s));
 });

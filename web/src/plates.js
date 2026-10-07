@@ -53,6 +53,8 @@ export function createPlates(map) {
         },
         (err) => {
           failedAt[key] = Date.now();
+          // Plate readers rarely move: an expired tile beats an empty one.
+          if (hit) return hit.records;
           throw err;
         },
       );
@@ -118,16 +120,25 @@ export function createPlates(map) {
   map.on('moveend', refresh);
 
   return {
-    /** Plate readers within about radiusM of a point, for spoken alerts (works with the layer off). */
+    /**
+     * Plate readers within about radiusM of a point, for spoken alerts (works with
+     * the layer off). Resolves { records, failed }: failed counts tiles with no
+     * data at all (fetchTile backs off, and the next call retries them).
+     */
     near(lat, lon, radiusM) {
       const dLat = radiusM / 111320;
       const dLon = radiusM / (111320 * Math.cos((lat * Math.PI) / 180));
       const box = { south: lat - dLat, west: lon - dLon, north: lat + dLat, east: lon + dLon };
       const tiles = tilesForBounds(box, ALPR_MAX_TILE_ZOOM);
-      // A failed tile counts as empty here: fetchTile backs off, and the next call retries it.
-      return Promise.all(tiles.map((t) => fetchTile(t).catch(() => []))).then((lists) =>
-        Array.prototype.concat.apply([], lists),
-      );
+      let failed = 0;
+      return Promise.all(
+        tiles.map((t) =>
+          fetchTile(t).catch(() => {
+            failed++;
+            return [];
+          }),
+        ),
+      ).then((lists) => ({ records: Array.prototype.concat.apply([], lists), failed }));
     },
     setEnabled(on) {
       enabled = on;

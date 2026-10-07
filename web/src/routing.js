@@ -25,6 +25,7 @@ export function createRouting(map, app) {
   let line = null;
   let pin = null;
   let offCount = 0;
+  let offRouteSpoken = false;
   let routedAt = 0;
   let alongM = null; // where the truck was on the route at the last fix
   let generation = 0; // bumped by every new route request and by END: late answers are dropped
@@ -115,9 +116,12 @@ export function createRouting(map, app) {
     render(p);
     if (fix.accuracy > POOR_FIX_M) return;
     offCount = p.offM > OFF_ROUTE_M ? offCount + 1 : 0;
+    if (offCount === 0) offRouteSpoken = false; // back on the line
     if (offCount >= OFF_ROUTE_FIXES && Date.now() - routedAt > REROUTE_MIN_GAP_MS) {
       toast('Off route. Finding a new one...');
-      app.say('trip', 'Off route. Finding a new way.');
+      // Said once per time off route; a failed re-route tries again quietly.
+      if (!offRouteSpoken) app.say('trip', 'Off route. Finding a new way.');
+      offRouteSpoken = true;
       start(dest, true);
     }
   }

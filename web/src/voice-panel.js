@@ -60,7 +60,7 @@ export function openVoicePanel(ctx) {
       el(
         'p',
         { class: 'sheet-sub' },
-        "OpenAI voice: AI-generated, not a human. Tap a voice or an accent to hear it. The unit's own voice speaks when there is no internet or low data is on.",
+        "OpenAI voice: AI-generated, not a human. Tap a voice or an accent to hear it. Alerts already heard play offline; new ones use the unit's own voice when there is no internet.",
       ),
     );
     body.appendChild(choices('voiceName', VOICES.map((v) => ({ id: v, label: v.toUpperCase() }))));

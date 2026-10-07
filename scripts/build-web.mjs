@@ -51,8 +51,22 @@ export function copyStatic() {
   fs.copyFileSync(path.join(root, 'node_modules', 'leaflet', 'dist', 'leaflet.css'), path.join(dist, 'leaflet.css'));
   const truckPhoto = path.join(root, 'truck.local.jpg');
   const shipped = path.join(dist, 'truck.jpg');
-  if (fs.existsSync(truckPhoto)) fs.copyFileSync(truckPhoto, shipped);
-  else fs.rmSync(shipped, { force: true });
+  if (fs.existsSync(truckPhoto)) {
+    checkTruckPhoto(truckPhoto);
+    fs.copyFileSync(truckPhoto, shipped);
+  } else {
+    fs.rmSync(shipped, { force: true });
+  }
+}
+
+// Anthropic rejects a picture over 5 MB, and the app sends it as JPEG.
+const TRUCK_PHOTO_MAX_BYTES = 3 * 1024 * 1024;
+function checkTruckPhoto(file) {
+  const bytes = fs.readFileSync(file);
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) throw new Error('truck.local.jpg is not a JPEG. Save it as .jpg.');
+  if (bytes.length > TRUCK_PHOTO_MAX_BYTES) {
+    throw new Error(`truck.local.jpg is ${(bytes.length / 1048576).toFixed(1)} MB; shrink it to about 768 px wide (under 3 MB).`);
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
