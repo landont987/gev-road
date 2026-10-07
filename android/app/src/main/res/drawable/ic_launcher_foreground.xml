@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The truck arrow from the map, centered in the 108dp adaptive icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:strokeColor="#3CC8E6"
+        android:strokeWidth="3"
+        android:fillColor="#2E3CC8E6"
+        android:pathData="M54,30 A24,24 0 1,1 53.99,30 Z" />
+    <path
+        android:fillColor="#3CC8E6"
+        android:pathData="M54,36 L66,70 L54,63 L42,70 Z" />
+</vector>

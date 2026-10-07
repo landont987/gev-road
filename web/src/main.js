@@ -1,0 +1,170 @@
+// GEV Road: wires the map, the truck, the layers and the buttons together.
+
+import L from 'leaflet';
+import {
+  BASEMAP_URL,
+  BASEMAP_ATTRIBUTION,
+  BASEMAP_MAX_ZOOM,
+  START_VIEW,
+  DRIVE_ZOOM,
+  LOW_DATA_MAX_ZOOM,
+  MOVING_SPEED_MPS,
+  DATA_WARN_BYTES,
+} from './config.js';
+import { $, setOn, toast, closeSheet } from './ui.js';
+import { loadSettings, saveSettings } from './settings.js';
+import { createGps } from './gps.js';
+import { createTruck } from './truck.js';
+import { createCameras } from './cameras.js';
+import { createPlates } from './plates.js';
+import { createTraffic } from './traffic.js';
+import { createRouting } from './routing.js';
+import { openMenu } from './menu.js';
+
+const settings = loadSettings();
+const MPS_TO_MPH = 2.23694;
+const GPS_STALE_MS = 5000;
+
+const map = L.map('map', {
+  zoomControl: false,
+  zoomAnimation: false,
+  fadeAnimation: false,
+  markerZoomAnimation: false,
+  inertia: false,
+  attributionControl: true,
+}).setView([START_VIEW.lat, START_VIEW.lon], START_VIEW.zoom);
+
+const basemap = L.tileLayer(BASEMAP_URL, {
+  maxZoom: BASEMAP_MAX_ZOOM,
+  className: 'basemap-dark',
+  attribution: BASEMAP_ATTRIBUTION,
+  updateWhenIdle: true,
+  keepBuffer: settings.lowData ? 0 : 1,
+}).addTo(map);
+
+const renderer = L.canvas({ padding: 0.2, tolerance: 10 });
+
+let lastFix = null;
+let lastFixAt = 0;
+let moving = false;
+
+const app = {
+  isMoving: () => moving,
+  isLowData: () => settings.lowData,
+  origin: () => lastFix || { lat: map.getCenter().lat, lon: map.getCenter().lng },
+  isFollowing: () => truck.isFollowing(),
+};
+
+const truck = createTruck(map, (following) => {
+  $('btn-recenter').hidden = following;
+});
+const cameras = createCameras(map, renderer, app);
+const plates = createPlates(map, renderer);
+const traffic = createTraffic(map);
+const routing = createRouting(map, app);
+
+function dataBytes() {
+  if (!window.GevNative) return null;
+  try {
+    const bytes = Number(window.GevNative.dataBytes());
+    return bytes >= 0 ? bytes : null; // -1: this unit does not report per-app data
+  } catch (err) {
+    console.warn('data meter:', err);
+    return null;
+  }
+}
+
+function dataText() {
+  const bytes = dataBytes();
+  if (bytes === null) return 'Data used: shown on the truck (the data meter reads the Android app).';
+  return `Data used since the app opened: ${(bytes / 1048576).toFixed(1)} MB.`;
+}
+
+let dataWarned = false;
+function updateStatus() {
+  const fresh = lastFix && Date.now() - lastFixAt < GPS_STALE_MS;
+  const speed = fresh && lastFix.speed !== null ? Math.round(lastFix.speed * MPS_TO_MPH) : null;
+  $('speed').textContent = speed === null ? '--' : String(speed);
+  $('gps-state').textContent = !fresh ? 'NO GPS' : lastFix.source === 'demo' ? 'DEMO GPS' : 'GPS OK';
+  const bytes = dataBytes();
+  $('data-used').textContent = bytes === null ? 'DATA --' : `DATA ${(bytes / 1048576).toFixed(1)} MB`;
+  if (bytes !== null && bytes > DATA_WARN_BYTES && !settings.lowData && !dataWarned) {
+    dataWarned = true;
+    toast('This app has used over 100 MB. Tap LOW DATA to save your hotspot.', 8000);
+  }
+}
+
+function applySettings() {
+  saveSettings(settings);
+  setOn($('btn-cameras'), settings.cameras);
+  setOn($('btn-plates'), settings.plates);
+  setOn($('btn-traffic'), settings.traffic && !settings.lowData);
+  setOn($('btn-lowdata'), settings.lowData);
+  setOn($('btn-drive'), settings.drive);
+  $('btn-traffic').disabled = settings.lowData;
+  $('lowdata-badge').hidden = !settings.lowData;
+  document.body.classList.toggle('drive', settings.drive);
+  basemap.options.keepBuffer = settings.lowData ? 0 : 1;
+  const maxZoom = settings.lowData ? LOW_DATA_MAX_ZOOM : BASEMAP_MAX_ZOOM;
+  map.setMaxZoom(maxZoom);
+  if (map.getZoom() > maxZoom) map.setZoom(maxZoom, { animate: false });
+  cameras.setEnabled(settings.cameras);
+  plates.setEnabled(settings.plates);
+  traffic.setEnabled(settings.traffic && !settings.lowData);
+  cameras.refresh();
+  if (settings.drive) {
+    map.dragging.disable();
+    truck.setFollowing(true);
+    if (map.getZoom() < DRIVE_ZOOM - 2) map.setZoom(Math.min(DRIVE_ZOOM, maxZoom), { animate: false });
+  } else {
+    map.dragging.enable();
+  }
+  updateStatus();
+}
+
+function onFix(fix) {
+  lastFix = fix;
+  lastFixAt = Date.now();
+  truck.update(fix);
+  routing.update(fix);
+  const nowMoving = fix.speed !== null && fix.speed >= MOVING_SPEED_MPS;
+  if (nowMoving !== moving) {
+    moving = nowMoving;
+    cameras.refresh();
+  }
+  updateStatus();
+}
+
+const gps = createGps(onFix);
+setInterval(updateStatus, GPS_STALE_MS);
+
+function toggle(name) {
+  return () => {
+    settings[name] = !settings[name];
+    applySettings();
+  };
+}
+
+$('btn-cameras').addEventListener('click', toggle('cameras'));
+$('btn-plates').addEventListener('click', toggle('plates'));
+$('btn-lowdata').addEventListener('click', toggle('lowData'));
+$('btn-drive').addEventListener('click', () => {
+  closeSheet();
+  toggle('drive')();
+});
+$('btn-traffic').addEventListener('click', () => {
+  if (!traffic.hasKey()) {
+    toast('Live traffic needs your free TomTom key. It is not set yet.');
+    return;
+  }
+  toggle('traffic')();
+});
+$('btn-route').addEventListener('click', () => routing.openSearch());
+$('btn-zoom-in').addEventListener('click', () => map.zoomIn(1, { animate: false }));
+$('btn-zoom-out').addEventListener('click', () => map.zoomOut(1, { animate: false }));
+$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText }));
+$('btn-recenter').addEventListener('click', () => truck.setFollowing(true));
+$('btn-sheet-close').addEventListener('click', closeSheet);
+map.on('contextmenu', (e) => routing.confirmPoint(e.latlng));
+
+applySettings();
