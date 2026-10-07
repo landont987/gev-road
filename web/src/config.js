@@ -32,9 +32,11 @@ export const ALPR_MAX_TILES = 16;
 export const ROUTE_URL = 'https://routing.openstreetmap.de/routed-car/route/v1/driving/';
 export const SEARCH_URL = 'https://photon.komoot.io/api/';
 
-// TomTom raster flow tiles. Unverified until a key exists: TomTom checks the
-// key before the path, so the style name cannot be probed without one.
-export const TRAFFIC_URL = 'https://api.tomtom.com/traffic/map/4/tile/flow/relative0-dark/{z}/{x}/{y}.png';
+// TomTom raster flow tiles, style relative0: the colors TomTom documents for a
+// light map (relative0-dark is its dimmed set for dark maps). Path and style
+// names match TomTom's raster flow tile docs (checked 2026-10-07); a real tile
+// is unproven until a key exists, because TomTom answers 401 before the path.
+export const TRAFFIC_URL = 'https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png';
 export const TRAFFIC_REFRESH_MS = 5 * 60 * 1000;
 
 // Broadcastify Calls Client API (bcfy.io/dev): recorded radio calls, metered,
