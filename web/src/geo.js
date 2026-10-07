@@ -40,10 +40,19 @@ export function cumulativeM(coords) {
 /**
  * Snap point p onto a [lon, lat] polyline. Returns how far off the line it is
  * (offM) and how far along the line the snapped point sits (alongM).
+ * Options (all optional, meters along the line):
+ *  - fromM / toM: only snap to that stretch of the line.
+ *  - firstWithinM: take the first stretch (in line order) that comes this
+ *    close, instead of the closest one. With fromM set to just behind the
+ *    last known position, a route that doubles back beside itself cannot
+ *    jump ahead to the other pass.
  * Uses a local flat projection: accurate to well under a meter at the
  * few-hundred-meter distances an off-route check cares about.
  */
-export function projectOntoLine(p, coords, cum) {
+export function projectOntoLine(p, coords, cum, opts) {
+  const o = opts || {};
+  const lo = o.fromM === undefined ? -Infinity : o.fromM;
+  const hi = o.toM === undefined ? Infinity : o.toM;
   if (coords.length === 0) return { offM: Infinity, alongM: 0 };
   if (coords.length === 1) {
     return { offM: distanceM(p, { lon: coords[0][0], lat: coords[0][1] }), alongM: 0 };
@@ -52,18 +61,23 @@ export function projectOntoLine(p, coords, cum) {
   const ky = 110540;
   let best = { offM: Infinity, alongM: 0 };
   for (let i = 0; i < coords.length - 1; i++) {
+    const segM = cum[i + 1] - cum[i];
+    if (cum[i + 1] < lo || cum[i] > hi) continue;
     const ax = (coords[i][0] - p.lon) * kx;
     const ay = (coords[i][1] - p.lat) * ky;
     const dx = (coords[i + 1][0] - p.lon) * kx - ax;
     const dy = (coords[i + 1][1] - p.lat) * ky - ay;
     const len2 = dx * dx + dy * dy;
-    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2));
+    let t = len2 === 0 ? 0 : -(ax * dx + ay * dy) / len2;
+    // Keep the snapped point inside [0, 1] and inside the allowed stretch.
+    const tLo = segM > 0 ? Math.max(0, (lo - cum[i]) / segM) : 0;
+    const tHi = segM > 0 ? Math.min(1, (hi - cum[i]) / segM) : 1;
+    t = Math.max(tLo, Math.min(tHi, t));
     const cx = ax + t * dx;
     const cy = ay + t * dy;
     const off = Math.sqrt(cx * cx + cy * cy);
-    if (off < best.offM) {
-      best = { offM: off, alongM: cum[i] + t * (cum[i + 1] - cum[i]) };
-    }
+    if (off < best.offM) best = { offM: off, alongM: cum[i] + t * segM };
+    if (o.firstWithinM !== undefined && off <= o.firstWithinM) return best;
   }
   return best;
 }
@@ -75,6 +89,13 @@ export function tileFor(lat, lon, z) {
   const r = toRad(lat);
   const y = Math.floor(((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2) * n);
   return { x: Math.min(n - 1, Math.max(0, x)), y: Math.min(n - 1, Math.max(0, y)) };
+}
+
+/** How many tiles at zoom z cover the box, without building them (zoomed out it is millions). */
+export function tileCount(box, z) {
+  const nw = tileFor(box.north, box.west, z);
+  const se = tileFor(box.south, box.east, z);
+  return (se.x - nw.x + 1) * (se.y - nw.y + 1);
 }
 
 /** Every tile at zoom z that covers a {south, west, north, east} box. */
@@ -94,7 +115,7 @@ export function tilesForBounds(box, z) {
  */
 export function pickTileZoom(box, minZ, maxZ, maxTiles) {
   for (let z = maxZ; z >= minZ; z--) {
-    if (tilesForBounds(box, z).length <= maxTiles) return z;
+    if (tileCount(box, z) <= maxTiles) return z;
   }
   return null;
 }

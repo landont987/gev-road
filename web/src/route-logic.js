@@ -77,7 +77,10 @@ export function instructionFor(step) {
 /** OSRM /route JSON -> { coords, cum, scale, distanceM, durationS, steps }. Throws on a bad answer. */
 export function parseRoute(json) {
   if (!json || json.code !== 'Ok' || !json.routes || !json.routes[0]) {
-    throw new Error((json && json.message) || 'No route found');
+    const err = new Error((json && json.message) || 'No route found');
+    // The server answered, it just has no road route (desert, private land...).
+    err.noRoute = true;
+    throw err;
   }
   const r = json.routes[0];
   const coords = r.geometry.coordinates;
@@ -107,12 +110,33 @@ export function parseRoute(json) {
   };
 }
 
+// Snap near where the truck was last time, taking the first stretch of route
+// ahead that the fix is close to. A route that doubles back beside itself (a
+// U-turn on a divided road) then cannot jump to the other pass early.
+const BACK_WINDOW_M = 150;
+const AHEAD_WINDOW_M = 3000;
+const ON_ROUTE_M = 25; // GPS noise allowance for "this is the stretch I am on"
+const WINDOW_MISS_M = 60; // nothing that close in the window: search the whole route
+
+function snapToRoute(route, pos, prevAlongM) {
+  if (prevAlongM !== undefined && prevAlongM !== null) {
+    const near = projectOntoLine(pos, route.coords, route.cum, {
+      fromM: (prevAlongM - BACK_WINDOW_M) / route.scale,
+      toM: (prevAlongM + AHEAD_WINDOW_M) / route.scale,
+      firstWithinM: ON_ROUTE_M,
+    });
+    if (near.offM <= WINDOW_MISS_M) return near;
+  }
+  return projectOntoLine(pos, route.coords, route.cum);
+}
+
 /**
  * Where a GPS fix sits on the route: the next maneuver, the distance to it,
- * what is left, and how far off the route line the truck is.
+ * what is left, and how far off the route line the truck is. Pass the
+ * previous result's alongM as prevAlongM.
  */
-export function routeProgress(route, pos) {
-  const snap = projectOntoLine(pos, route.coords, route.cum);
+export function routeProgress(route, pos, prevAlongM) {
+  const snap = snapToRoute(route, pos, prevAlongM);
   const alongM = snap.alongM * route.scale;
   let next = route.steps[route.steps.length - 1];
   for (let i = 1; i < route.steps.length; i++) {
@@ -124,6 +148,7 @@ export function routeProgress(route, pos) {
   const remainingM = Math.max(0, route.distanceM - alongM);
   return {
     next,
+    alongM,
     toNextM: Math.max(0, next.atM - alongM),
     remainingM,
     remainingS: route.distanceM > 0 ? (route.durationS * remainingM) / route.distanceM : 0,

@@ -399,6 +399,31 @@ body.drive #status .speed {
   color: var(--muted);
 }
 
+/* Map dots: a 40px transparent tap box (see src/dots.js) with the dot centered. */
+.dot {
+  background: none;
+  border: 0;
+}
+.dot::after {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 11px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #04212a;
+  background: var(--accent);
+}
+.dot-plate::after {
+  left: 13px;
+  top: 13px;
+  width: 10px;
+  height: 10px;
+  border-color: #2a0006;
+  background: var(--alpr);
+}
+
 /* The Android radio drawer sets --drawer to its height while it is up. */
 :root {
   --drawer: 0px;

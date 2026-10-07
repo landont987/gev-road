@@ -6,7 +6,7 @@
 import { pointAlong } from './geo.js';
 import { parseRoute } from './route-logic.js';
 import { ROUTE_URL } from './config.js';
-import { fetchWithTimeout } from './ui.js';
+import { nativeFetch } from './native-fetch.js';
 
 const DEMO_START = { lat: 33.4455, lon: -112.0667 }; // Chase Field
 const DEMO_END = { lat: 33.672, lon: -112.116 }; // I-17 at Deer Valley
@@ -16,7 +16,8 @@ const FIX_EVERY_MS = 1000;
 export function createGps(onFix) {
   let source = window.GevNative ? 'truck' : 'demo';
   let demoTimer = null;
-  let demoRoute = null;
+  let demoRoute = null; // the route being driven
+  let stockRoute = null; // the I-17 trip, fetched once
   let demoAlong = 0;
   let demoDriving = false;
 
@@ -57,16 +58,16 @@ export function createGps(onFix) {
     demoTick();
   }
 
-  /** Drive the given route (the one on screen), or a stock I-17 trip when there is none. */
+  /** Drive the given route (the one on screen), or the stock I-17 trip when there is none. */
   async function demoDrive(route) {
-    if (route) {
-      demoRoute = route;
-      demoAlong = 0;
-    } else if (!demoRoute) {
+    if (!route && !stockRoute) {
       const url = `${ROUTE_URL}${DEMO_START.lon},${DEMO_START.lat};${DEMO_END.lon},${DEMO_END.lat}?overview=full&geometries=geojson&steps=true`;
-      const res = await fetchWithTimeout(url, 15000);
-      demoRoute = parseRoute(await res.json());
+      const res = await nativeFetch(url, 20000); // the route server needs TLS 1.3 (see routing.js)
+      stockRoute = parseRoute(await res.json());
     }
+    const next = route || stockRoute;
+    if (next !== demoRoute || pointAlong(next.coords, demoAlong).done) demoAlong = 0;
+    demoRoute = next;
     source = 'demo';
     demoDriving = true;
     startDemoTimer();
@@ -98,6 +99,5 @@ export function createGps(onFix) {
     demoPark,
     demoRestart,
     useTruck,
-    isDemoDriving: () => demoDriving,
   };
 }

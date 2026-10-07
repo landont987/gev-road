@@ -11,12 +11,16 @@ import android.net.TrafficStats;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.WindowManager;
+import android.webkit.ConsoleMessage;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
+import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
@@ -38,6 +42,8 @@ public class MainActivity extends Activity {
     private static final String START_URL = "https://" + APP_HOST + "/assets/web/index.html";
     private static final int LOCATION_REQUEST = 1;
     private static final long GPS_INTERVAL_MS = 1000;
+    // A saved fix older than this is not shown as the truck's position.
+    private static final long LAST_FIX_MAX_AGE_MS = 30000;
 
     private WebView web;
     private RadioDrawer radio;
@@ -45,6 +51,7 @@ public class MainActivity extends Activity {
     private long rxAtStart;
     private long txAtStart;
     private boolean gpsRunning;
+    private boolean askedForLocation;
 
     private final LocationListener gpsListener = new LocationListener() {
         @Override
@@ -76,11 +83,14 @@ public class MainActivity extends Activity {
         rxAtStart = TrafficStats.getUidRxBytes(uid);
         txAtStart = TrafficStats.getUidTxBytes(uid);
         locations = (LocationManager) getSystemService(LOCATION_SERVICE);
+        NativeHttp.init(this);
 
         final WebViewAssetLoader assets = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
                 .build();
 
+        // Debug builds only: lets Chrome DevTools inspect the page over adb.
+        if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true);
         web = new WebView(this);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -108,6 +118,25 @@ public class MainActivity extends Activity {
                 }
                 return true;
             }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                // Low memory can kill the page's process. Returning true keeps the app
+                // alive; the dead WebView cannot be reused, so rebuild the screen.
+                Log.e(TAG, "map page process gone (crashed=" + detail.didCrash() + "), restarting the screen");
+                stopGps();
+                recreate();
+                return true;
+            }
+        });
+        // Page errors go to logcat (adb logcat -s GevRoad), the only place to see them on the unit.
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage message) {
+                Log.i(TAG, "page " + message.messageLevel() + ": " + message.message()
+                        + " (" + message.sourceId() + ":" + message.lineNumber() + ")");
+                return true;
+            }
         });
         web.addJavascriptInterface(new Bridge(), "GevNative");
 
@@ -130,7 +159,9 @@ public class MainActivity extends Activity {
         web.onResume();
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             startGps();
-        } else {
+        } else if (!askedForLocation) {
+            // Ask once per launch: after "Deny", onResume runs again and must not re-ask in a loop.
+            askedForLocation = true;
             requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_REQUEST);
         }
     }
@@ -166,7 +197,7 @@ public class MainActivity extends Activity {
             locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, GPS_INTERVAL_MS, 0, gpsListener);
             gpsRunning = true;
             Location last = locations.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            if (last != null) pushLocation(last);
+            if (last != null && ageMs(last) < LAST_FIX_MAX_AGE_MS) pushLocation(last);
         } catch (SecurityException | IllegalArgumentException e) {
             Log.e(TAG, "GPS could not start", e);
             Toast.makeText(this, "This unit's GPS could not start.", Toast.LENGTH_LONG).show();
@@ -177,6 +208,10 @@ public class MainActivity extends Activity {
         if (!gpsRunning) return;
         locations.removeUpdates(gpsListener);
         gpsRunning = false;
+    }
+
+    private static long ageMs(Location loc) {
+        return (SystemClock.elapsedRealtimeNanos() - loc.getElapsedRealtimeNanos()) / 1000000L;
     }
 
     private void pushLocation(Location loc) {

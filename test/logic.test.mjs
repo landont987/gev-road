@@ -9,6 +9,7 @@ import {
   projectOntoLine,
   tileFor,
   tilesForBounds,
+  tileCount,
   pickTileZoom,
   pointAlong,
 } from '../web/src/geo.js';
@@ -194,4 +195,65 @@ test('distances and times read like a car display', () => {
   assert.equal(formatDistance(1609.344 * 42), '42 mi');
   assert.equal(formatDuration(17 * 60), '17 min');
   assert.equal(formatDuration(95 * 60), '1 h 35 min');
+});
+
+test('tile counting is arithmetic, so a world view cannot build millions of tiles', () => {
+  const world = { south: -80, west: -179, north: 80, east: 179 };
+  const started = Date.now();
+  assert.equal(pickTileZoom(world, 9, 12, 16), null);
+  assert.ok(Date.now() - started < 50, 'returns at once');
+  const city = { south: 33.4, west: -112.15, north: 33.5, east: -112.0 };
+  assert.equal(tileCount(city, 12), tilesForBounds(city, 12).length);
+});
+
+// Out 2 km north, U-turn, back 2 km on a carriageway 23 m to the east.
+function outAndBackRoute() {
+  const out = [];
+  const back = [];
+  for (let i = 0; i <= 20; i++) out.push([-112.0, 33.0 + i * 0.0009]);
+  for (let i = 20; i >= 0; i--) back.push([-111.99975, 33.0 + i * 0.0009]);
+  const coords = out.concat(back);
+  const outM = cumulativeM(out).pop();
+  const turnM = cumulativeM([out[out.length - 1], back[0]]).pop();
+  const backM = cumulativeM(back).pop();
+  const step = (type, modifier, distance) => ({ maneuver: { type, modifier }, name: 'Test Rd', distance });
+  return parseRoute({
+    code: 'Ok',
+    routes: [
+      {
+        distance: outM + turnM + backM,
+        duration: 300,
+        geometry: { coordinates: coords },
+        legs: [{ steps: [step('depart', 'straight', outM), step('turn', 'uturn', turnM + backM), step('arrive', '', 0)] }],
+      },
+    ],
+  });
+}
+
+test('on a route that doubles back beside itself, progress stays on the pass the truck is on', () => {
+  const route = outAndBackRoute();
+  // Truck 500 m up the outbound side, GPS drifted 12 m toward the return side.
+  const fix = { lat: 33.0 + 500 / 111000, lon: -112.0 + 12 / (111320 * Math.cos((33 * Math.PI) / 180)) };
+  const global = routeProgress(route, fix);
+  assert.equal(global.next.text, 'Arrive at your destination', 'whole-route snap jumps to the return pass');
+  const p = routeProgress(route, fix, 490);
+  assert.equal(p.next.text, 'Make a U-turn');
+  assert.ok(p.remainingM > 3400, `remaining ${p.remainingM}`);
+});
+
+test('after a long GPS gap the window misses and the whole route is searched', () => {
+  const route = outAndBackRoute();
+  const fix = { lat: 33.0 + 1900 / 111000, lon: -112.0 };
+  const p = routeProgress(route, fix, 0); // last known at the start, now 1.9 km on
+  assert.ok(p.offM < 5);
+  assert.ok(Math.abs(p.alongM - 1900) < 30, `along ${p.alongM}`);
+});
+
+test('a no-route answer is tagged so the driver gets the right message', () => {
+  try {
+    parseRoute({ code: 'NoRoute', message: 'Impossible route between points' });
+    assert.fail('should throw');
+  } catch (err) {
+    assert.equal(err.noRoute, true);
+  }
 });

@@ -12,6 +12,7 @@ import {
   DATA_WARN_BYTES,
 } from './config.js';
 import { $, setOn, toast, closeSheet } from './ui.js';
+import { distanceM } from './geo.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { createGps } from './gps.js';
 import { createTruck } from './truck.js';
@@ -43,7 +44,6 @@ const basemap = L.tileLayer(BASEMAP_URL, {
   keepBuffer: settings.lowData ? 0 : 1,
 }).addTo(map);
 
-const renderer = L.canvas({ padding: 0.2, tolerance: 10 });
 
 let lastFix = null;
 let lastFixAt = 0;
@@ -52,15 +52,19 @@ let moving = false;
 const app = {
   isMoving: () => moving,
   isLowData: () => settings.lowData,
-  origin: () => lastFix || { lat: map.getCenter().lat, lon: map.getCenter().lng },
+  // Where routes start: the truck when the GPS is fresh, otherwise the middle of the map.
+  origin: () =>
+    lastFix && Date.now() - lastFixAt < GPS_STALE_MS
+      ? { lat: lastFix.lat, lon: lastFix.lon, fromGps: true }
+      : { lat: map.getCenter().lat, lon: map.getCenter().lng, fromGps: false },
   isFollowing: () => truck.isFollowing(),
 };
 
 const truck = createTruck(map, (following) => {
   $('btn-recenter').hidden = following;
 });
-const cameras = createCameras(map, renderer, app);
-const plates = createPlates(map, renderer);
+const cameras = createCameras(map, app);
+const plates = createPlates(map);
 const traffic = createTraffic(map);
 const routing = createRouting(map, app);
 const radio = createRadio(app);
@@ -125,7 +129,17 @@ function applySettings() {
   updateStatus();
 }
 
-function onFix(fix) {
+// Some GPS units report no speed. Then speed comes from the last two fixes,
+// so "stopped" (camera pictures allowed) is never assumed while driving.
+function withSpeed(fix, prev, prevAt) {
+  if (fix.speed !== null || !prev) return fix;
+  const seconds = (Date.now() - prevAt) / 1000;
+  if (seconds < 0.5 || seconds > GPS_STALE_MS / 1000) return fix;
+  return Object.assign({}, fix, { speed: distanceM(prev, fix) / seconds });
+}
+
+function onFix(raw) {
+  const fix = withSpeed(raw, lastFix, lastFixAt);
   lastFix = fix;
   lastFixAt = Date.now();
   truck.update(fix);

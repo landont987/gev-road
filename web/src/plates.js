@@ -6,8 +6,10 @@ import { ALPR_TILE_URL, ALPR_MIN_TILE_ZOOM, ALPR_MAX_TILE_ZOOM, ALPR_MAX_TILES, 
 import { pickTileZoom, tilesForBounds } from './geo.js';
 import { parseAlprTile } from './parse.js';
 import { el, openSheet, toast, fetchWithTimeout } from './ui.js';
+import { dot } from './dots.js';
 
 const MAX_CACHED_TILES = 200;
+const TILE_RETRY_MS = 30 * 1000;
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 function facing(deg) {
@@ -15,9 +17,10 @@ function facing(deg) {
   return `${COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8]} (${Math.round(deg)}°)`;
 }
 
-export function createPlates(map, renderer) {
+export function createPlates(map) {
   const group = L.layerGroup();
   const cache = new Map(); // "z/x/y" -> { at, records }
+  const failedAt = {}; // "z/x/y" -> when it last failed
   let enabled = false;
   let drawnKeys = '';
   let request = 0;
@@ -28,6 +31,11 @@ export function createPlates(map, renderer) {
     const key = `${t.z}/${t.x}/${t.y}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < ALPR_TILE_TTL_MS) return Promise.resolve(hit.records);
+    // The map moves every second while following, so a failed tile waits
+    // before it is asked for again instead of hammering a dead hotspot.
+    if (failedAt[key] && Date.now() - failedAt[key] < TILE_RETRY_MS) {
+      return Promise.reject(new Error(`plate tile ${key} failed recently`));
+    }
     const url = ALPR_TILE_URL.replace('{z}', t.z).replace('{x}', t.x).replace('{y}', t.y);
     return fetchWithTimeout(url, 15000)
       .then((res) => {
@@ -35,12 +43,19 @@ export function createPlates(map, renderer) {
         if (!res.ok) throw new Error(`plate tile ${key} HTTP ${res.status}`);
         return res.arrayBuffer().then((buf) => parseAlprTile(new Uint8Array(buf), t.z, t.x, t.y));
       })
-      .then((records) => {
-        cache.delete(key);
-        cache.set(key, { at: Date.now(), records });
-        while (cache.size > MAX_CACHED_TILES) cache.delete(cache.keys().next().value);
-        return records;
-      });
+      .then(
+        (records) => {
+          delete failedAt[key];
+          cache.delete(key);
+          cache.set(key, { at: Date.now(), records });
+          while (cache.size > MAX_CACHED_TILES) cache.delete(cache.keys().next().value);
+          return records;
+        },
+        (err) => {
+          failedAt[key] = Date.now();
+          throw err;
+        },
+      );
   }
 
   function show(r) {
@@ -60,16 +75,7 @@ export function createPlates(map, renderer) {
       for (const r of records) {
         if (seen[r.id]) continue;
         seen[r.id] = true;
-        L.circleMarker([r.lat, r.lon], {
-          renderer,
-          radius: 6,
-          color: '#2a0006',
-          weight: 2,
-          fillColor: '#ff4d5e',
-          fillOpacity: 1,
-        })
-          .on('click', () => show(r))
-          .addTo(group);
+        dot(r.lat, r.lon, 'plate', () => show(r)).addTo(group);
       }
     }
   }

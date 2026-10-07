@@ -47,6 +47,5 @@ export function createTruck(map, onFollowChange) {
     update,
     setFollowing,
     isFollowing: () => following,
-    last: () => last,
   };
 }

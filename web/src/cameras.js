@@ -7,6 +7,7 @@ import { KEYS, AZ_CAMERAS_URL, AZ511_API_CAMERAS_URL, AZ511_IMAGE_URL, CAMERA_LI
 import { parseAzCameras, parseAz511Api } from './parse.js';
 import { readCache, writeCache } from './settings.js';
 import { el, openSheet, openSheetKind, toast, fetchWithTimeout } from './ui.js';
+import { dot } from './dots.js';
 
 // Two caches, so adding or removing the key never shows the other list.
 const CACHE_KEY = KEYS.az511 ? 'gev-road-az511-cameras' : 'gev-road-az-cameras';
@@ -14,7 +15,7 @@ const PICTURE_TIMEOUT_MS = 20000;
 const OFFLINE_CARD = { w: 540, h: 330 }; // measured on offline cameras 1215 and 1217, 2026-10-06
 
 /** app: { isMoving(), isLowData() } */
-export function createCameras(map, renderer, app) {
+export function createCameras(map, app) {
   const group = L.layerGroup();
   let loading = null;
   let current = null; // camera whose sheet is open
@@ -45,16 +46,7 @@ export function createCameras(map, renderer, app) {
     loading = (cached ? Promise.resolve(cached) : fetchList()).then(
       (cams) => {
         for (const cam of cams) {
-          L.circleMarker([cam.lat, cam.lon], {
-            renderer,
-            radius: 8,
-            color: '#04212a',
-            weight: 2,
-            fillColor: '#3cc8e6',
-            fillOpacity: 1,
-          })
-            .on('click', () => show(cam))
-            .addTo(group);
+          dot(cam.lat, cam.lon, 'camera', () => show(cam)).addTo(group);
         }
         return cams.length;
       },
@@ -81,7 +73,7 @@ export function createCameras(map, renderer, app) {
     stopPicture();
     pictureBox.textContent = '';
     pictureBox.appendChild(el('div', { class: 'note warn' }, message));
-    pictureBox.appendChild(el('button', { class: 'pill small wide', onclick: () => loadPicture(cam) }, 'TRY AGAIN'));
+    pictureBox.appendChild(el('button', { class: 'pill small wide', onclick: () => renderPicture(cam, true) }, 'TRY AGAIN'));
   }
 
   // An <img> rather than fetch(): AZ511 sends two Access-Control-Allow-Origin
@@ -106,7 +98,7 @@ export function createCameras(map, renderer, app) {
       const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       pictureBox.appendChild(img);
       pictureBox.appendChild(el('p', { class: 'sheet-sub' }, `Picture from ${time}.`));
-      pictureBox.appendChild(el('button', { class: 'pill small', onclick: () => loadPicture(cam) }, 'REFRESH'));
+      pictureBox.appendChild(el('button', { class: 'pill small', onclick: () => renderPicture(cam, true) }, 'REFRESH'));
     };
     img.onerror = () => {
       if (picture === img) showFailure(cam, 'The picture did not load. Check the hotspot.');
@@ -126,17 +118,20 @@ export function createCameras(map, renderer, app) {
     } else if (autoLoad) {
       loadPicture(cam);
     } else {
-      pictureBox.appendChild(el('button', { class: 'pill wide', onclick: () => loadPicture(cam) }, 'SHOW PICTURE'));
+      pictureBox.appendChild(el('button', { class: 'pill wide', onclick: () => renderPicture(cam, true) }, 'SHOW PICTURE'));
     }
   }
 
   function show(cam) {
-    current = cam;
+    // openSheet first runs the previous sheet's close handler; set current
+    // only after it, or tapping a second camera would clear it.
     const body = openSheet('camera', cam.name, () => {
+      if (current !== cam) return;
       stopPicture();
       current = null;
       pictureBox = null;
     });
+    current = cam;
     const road = [cam.road, cam.direction].filter(Boolean).join(' ');
     if (road) body.appendChild(el('p', { class: 'sheet-sub' }, road));
     pictureBox = el('div');
