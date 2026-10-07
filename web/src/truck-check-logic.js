@@ -45,7 +45,7 @@ const imageBlock = (img) => ({ type: 'image', source: { type: 'base64', media_ty
 export function truckCheckBody({ model, camera, reference, description }) {
   const content = [];
   if (reference) {
-    content.push({ type: 'text', text: "Image 1: the driver's own truck." }, imageBlock(reference));
+    content.push({ type: 'text', text: "Image 1: photos of the driver's own truck (front, and back corner)." }, imageBlock(reference));
   }
   const camLabel = reference ? 'Image 2' : 'Image 1';
   content.push({ type: 'text', text: `${camLabel}: the traffic camera picture, ${camera.width} x ${camera.height} pixels.` });
