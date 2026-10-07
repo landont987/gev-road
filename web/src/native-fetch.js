@@ -36,11 +36,8 @@ export function hasNativeHttp() {
   return !!(window.GevNative && typeof window.GevNative.http === 'function');
 }
 
-/** init: { method, headers: { Authorization, 'Content-Type' }, body } */
-export function nativeFetch(url, timeoutMs, init) {
-  const options = init || {};
-  if (!hasNativeHttp()) return fetchWithTimeout(url, timeoutMs, options);
-  const headers = options.headers || {};
+/** Waits for window.gevOnHttp(id, ...) after start(id) hands the request to the app. */
+function viaApp(timeoutMs, start) {
   return new Promise((resolve, reject) => {
     const id = nextId++;
     pending[id] = {
@@ -54,18 +51,54 @@ export function nativeFetch(url, timeoutMs, init) {
       }, timeoutMs),
     };
     try {
-      window.GevNative.http(
-        id,
-        options.method || 'GET',
-        url,
-        headers.Authorization || '',
-        headers['Content-Type'] || '',
-        typeof options.body === 'string' ? options.body : '',
-      );
+      start(id);
     } catch (err) {
       clearTimeout(pending[id].timer);
       delete pending[id];
       reject(err);
     }
   });
+}
+
+/** init: { method, headers: { Authorization, 'Content-Type' }, body } */
+export function nativeFetch(url, timeoutMs, init) {
+  const options = init || {};
+  if (!hasNativeHttp()) return fetchWithTimeout(url, timeoutMs, options);
+  const headers = options.headers || {};
+  return viaApp(timeoutMs, (id) =>
+    window.GevNative.http(
+      id,
+      options.method || 'GET',
+      url,
+      headers.Authorization || '',
+      headers['Content-Type'] || '',
+      typeof options.body === 'string' ? options.body : '',
+    ),
+  );
+}
+
+export function hasNativeRequest() {
+  return !!(window.GevNative && typeof window.GevNative.httpEx === 'function');
+}
+
+/**
+ * Like nativeFetch, with any headers, and with base64: true the body comes back
+ * as base64 text (pictures); the caller decodes it. Android app only: the hosts
+ * it serves (OpenAI, Anthropic, az511.com) cannot be reached from the page.
+ * init: { method, headers: { name: value }, body, base64 }
+ */
+export function nativeRequest(url, timeoutMs, init) {
+  const options = init || {};
+  if (!hasNativeRequest()) return Promise.reject(new Error('this needs the Android app'));
+  return viaApp(timeoutMs, (id) =>
+    window.GevNative.httpEx(
+      id,
+      options.method || 'GET',
+      url,
+      JSON.stringify(options.headers || {}),
+      typeof options.body === 'string' ? options.body : '',
+      !!options.base64,
+      timeoutMs,
+    ),
+  );
 }

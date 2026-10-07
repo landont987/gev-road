@@ -18,7 +18,7 @@ const ROUTE_TIMEOUT_MS = 20000;
 const SEARCH_TIMEOUT_MS = 15000;
 const POOR_FIX_M = 100; // a fix less accurate than this never triggers a re-route
 
-/** app: { origin() -> {lat, lon, fromGps}, isFollowing() } */
+/** app: { origin() -> {lat, lon, fromGps}, isFollowing(), say(kind, text) } */
 export function createRouting(map, app) {
   let route = null;
   let dest = null;
@@ -117,6 +117,7 @@ export function createRouting(map, app) {
     offCount = p.offM > OFF_ROUTE_M ? offCount + 1 : 0;
     if (offCount >= OFF_ROUTE_FIXES && Date.now() - routedAt > REROUTE_MIN_GAP_MS) {
       toast('Off route. Finding a new one...');
+      app.say('trip', 'Off route. Finding a new way.');
       start(dest, true);
     }
   }

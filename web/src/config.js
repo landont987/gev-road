@@ -63,3 +63,20 @@ export const START_VIEW = { lat: 33.4484, lon: -112.074, zoom: 13 }; // downtown
 export const DRIVE_ZOOM = 16;
 // Low data mode stops zooming past this, so fewer ~30 KB map tiles load per mile.
 export const LOW_DATA_MAX_ZOOM = 15;
+
+// Spoken alerts: OpenAI text to speech with your key in keys.local.json ("openai").
+// Without a key, offline, or in low data mode, the unit's own voice speaks instead.
+export const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
+export const OPENAI_TTS_MODEL = 'gpt-4o-mini-tts';
+
+// AI truck check: Claude looks at a camera picture for your truck while you are
+// stopped near it. Key in keys.local.json ("anthropic"). About 1 to 2 cents a check.
+export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+export const ANTHROPIC_VERSION = '2023-06-01';
+export const TRUCK_CHECK_MODEL = 'claude-opus-5-5';
+
+// Speed and red-light cameras mapped in OpenStreetMap, all of Arizona in one
+// small answer (about 6 KB, 27 cameras on 2026-10-07), fetched once a day.
+export const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+export const SPEED_CAMERAS_QUERY = '[out:json][timeout:30];node["highway"="speed_camera"](31.3,-114.9,37.1,-109.0);out body;';
+export const SPEED_CAMERAS_TTL_MS = 24 * 60 * 60 * 1000;

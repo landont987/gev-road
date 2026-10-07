@@ -7,6 +7,9 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.TrafficStats;
 import android.net.Uri;
 import android.os.Bundle;
@@ -28,13 +31,18 @@ import android.widget.Toast;
 
 import androidx.webkit.WebViewAssetLoader;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * One full-screen WebView showing the bundled map page (assets/web), plus the
- * truck's GPS pushed into the page and an exact per-app data meter.
+ * truck's GPS pushed into the page, an exact per-app data meter, spoken alerts
+ * and the hotspot's online/offline state.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "GevRoad";
@@ -47,6 +55,10 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private RadioDrawer radio;
+    private Speech speech;
+    private ConnectivityManager connectivity;
+    private ConnectivityManager.NetworkCallback networkWatch;
+    private Boolean lastOnline;
     private LocationManager locations;
     private long rxAtStart;
     private long txAtStart;
@@ -84,6 +96,17 @@ public class MainActivity extends Activity {
         txAtStart = TrafficStats.getUidTxBytes(uid);
         locations = (LocationManager) getSystemService(LOCATION_SERVICE);
         NativeHttp.init(this);
+        speech = new Speech(this, new Speech.Listener() {
+            @Override
+            public void onSpeaking(boolean speaking) {
+                runOnUiThread(() -> js("window.gevOnSpeaking&&window.gevOnSpeaking(" + speaking + ")"));
+            }
+
+            @Override
+            public void onProblem(String what) {
+                runOnUiThread(() -> js("window.gevOnVoiceProblem&&window.gevOnVoiceProblem(" + JSONObject.quote(what) + ")"));
+            }
+        });
 
         final WebViewAssetLoader assets = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
@@ -151,6 +174,42 @@ public class MainActivity extends Activity {
         root.addView(radio.view(), radio.layoutParams());
         setContentView(root);
         web.loadUrl(START_URL);
+        watchNetwork();
+    }
+
+    /** Tells the page when the hotspot connection drops or comes back (for the spoken alert). */
+    private void watchNetwork() {
+        connectivity = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        networkWatch = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onCapabilitiesChanged(Network net, NetworkCapabilities caps) {
+                report(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+            }
+
+            @Override
+            public void onLost(Network net) {
+                report(false);
+            }
+
+            private void report(boolean online) {
+                runOnUiThread(() -> {
+                    if (lastOnline != null && lastOnline == online) return;
+                    lastOnline = online;
+                    js("window.gevOnNetwork&&window.gevOnNetwork(" + online + ")");
+                });
+            }
+        };
+        try {
+            connectivity.registerDefaultNetworkCallback(networkWatch);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "cannot watch the network", e);
+            networkWatch = null;
+        }
+    }
+
+    /** Runs page script unless the screen is already gone (callbacks can arrive late). */
+    private void js(String code) {
+        if (!isDestroyed()) web.evaluateJavascript(code, null);
     }
 
     @Override
@@ -176,6 +235,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopGps();
+        if (networkWatch != null) connectivity.unregisterNetworkCallback(networkWatch);
+        speech.shutdown();
         radio.destroy();
         web.destroy();
         super.onDestroy();
@@ -254,6 +315,41 @@ public class MainActivity extends Activity {
             }, "gev-http-" + id).start();
         }
 
+        /**
+         * Like http, with any headers (a JSON object of name: value), a timeout,
+         * and, with base64, the body answered as base64 text (for pictures).
+         * The answer comes back through window.gevOnHttp(id, status, body).
+         */
+        @JavascriptInterface
+        public void httpEx(final int id, final String method, final String url, final String headersJson,
+                           final String body, final boolean base64, final int timeoutMs) {
+            new Thread(() -> {
+                NativeHttp.Result result;
+                try {
+                    result = NativeHttp.request(method, url, headers(headersJson), body, base64, timeoutMs);
+                } catch (JSONException e) {
+                    result = new NativeHttp.Result(0, "bad headers: " + e.getMessage());
+                }
+                final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
+                        + JSONObject.quote(result.body) + ")";
+                runOnUiThread(() -> js(js));
+            }, "gev-http-" + id).start();
+        }
+
+        /**
+         * Speak an alert. With aiUrl, aiKey and aiBody (an OpenAI speech request)
+         * the AI voice speaks; with empty strings, the unit's own voice.
+         */
+        @JavascriptInterface
+        public void speak(String text, String aiUrl, String aiKey, String aiBody) {
+            speech.say(text, orEmpty(aiUrl), orEmpty(aiKey), orEmpty(aiBody));
+        }
+
+        @JavascriptInterface
+        public void stopSpeaking() {
+            speech.stop();
+        }
+
         /** Bytes this app has sent and received since it opened, or -1 if the unit does not report it. */
         @JavascriptInterface
         public long dataBytes() {
@@ -265,5 +361,20 @@ public class MainActivity extends Activity {
             }
             return (rx - rxAtStart) + (tx - txAtStart);
         }
+    }
+
+    private static String orEmpty(String text) {
+        return text == null ? "" : text;
+    }
+
+    private static Map<String, String> headers(String json) throws JSONException {
+        Map<String, String> map = new LinkedHashMap<>();
+        if (json == null || json.isEmpty()) return map;
+        JSONObject obj = new JSONObject(json);
+        for (Iterator<String> names = obj.keys(); names.hasNext(); ) {
+            String name = names.next();
+            map.put(name, obj.getString(name));
+        }
+        return map;
     }
 }

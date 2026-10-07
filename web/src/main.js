@@ -22,10 +22,17 @@ import { createTraffic } from './traffic.js';
 import { createRouting } from './routing.js';
 import { createRadio } from './radio.js';
 import { openMenu } from './menu.js';
+import { createVoice } from './voice.js';
+import { createAlerts } from './alerts.js';
+import { createSpeedCameras } from './speed-cameras.js';
+import { createTruckCheck } from './truck-check.js';
+import { openVoicePanel } from './voice-panel.js';
 
 const settings = loadSettings();
 const MPS_TO_MPH = 2.23694;
 const GPS_STALE_MS = 5000;
+const GPS_LOST_MS = 15000; // "GPS signal lost" after this long without a fix
+const NETWORK_SETTLE_MS = 5000; // a hotspot blip shorter than this is not spoken
 
 const map = L.map('map', {
   zoomControl: false,
@@ -47,6 +54,7 @@ const basemap = L.tileLayer(BASEMAP_URL, {
 let lastFix = null;
 let lastFixAt = 0;
 let moving = false;
+let online = true; // until the app says otherwise
 
 const app = {
   isMoving: () => moving,
@@ -57,6 +65,8 @@ const app = {
       ? { lat: lastFix.lat, lon: lastFix.lon, fromGps: true }
       : { lat: map.getCenter().lat, lon: map.getCenter().lng, fromGps: false },
   isFollowing: () => truck.isFollowing(),
+  isOnline: () => online,
+  say: (kind, text) => voice.alert(kind, text),
 };
 
 const truck = createTruck(map, (following) => {
@@ -68,6 +78,25 @@ const traffic = createTraffic(map);
 const routing = createRouting(map, app);
 const radio = createRadio(app);
 radio.onChange((playingId) => setOn($('btn-radio'), !!playingId));
+const voice = createVoice(settings, app);
+const alerts = createAlerts({ cameras, plates, speedCameras: createSpeedCameras(), voice, settings });
+const truckCheck = createTruckCheck({ app, cameras, voice, settings });
+
+// The hotspot dropping or coming back, from the Android app (or the browser).
+let spokenOnline = true;
+let networkTimer = null;
+function onNetwork(on) {
+  online = on;
+  clearTimeout(networkTimer);
+  networkTimer = setTimeout(() => {
+    if (online === spokenOnline) return;
+    spokenOnline = online;
+    voice.alert('link', online ? 'Back online.' : 'Hotspot connection lost.');
+  }, NETWORK_SETTLE_MS);
+}
+window.gevOnNetwork = onNetwork;
+window.addEventListener('online', () => onNetwork(true));
+window.addEventListener('offline', () => onNetwork(false));
 
 function dataBytes() {
   if (!window.GevNative) return null;
@@ -87,6 +116,7 @@ function dataText() {
 }
 
 let dataWarned = false;
+let gpsLostSpoken = false;
 function updateStatus() {
   const fresh = lastFix && Date.now() - lastFixAt < GPS_STALE_MS;
   const speed = fresh && lastFix.speed !== null ? Math.round(lastFix.speed * MPS_TO_MPH) : null;
@@ -97,6 +127,11 @@ function updateStatus() {
   if (bytes !== null && bytes > DATA_WARN_BYTES && !settings.lowData && !dataWarned) {
     dataWarned = true;
     toast('This app has used over 100 MB. Tap LOW DATA to save your hotspot.', 8000);
+    voice.alert('trip', 'This app has used over 100 megabytes of hotspot data.');
+  }
+  if (!gpsLostSpoken && lastFix && lastFix.source === 'truck' && Date.now() - lastFixAt > GPS_LOST_MS) {
+    gpsLostSpoken = true;
+    voice.alert('link', 'GPS signal lost.');
   }
 }
 
@@ -142,12 +177,19 @@ function onFix(raw) {
   const fix = withSpeed(raw, lastFix, lastFixAt);
   lastFix = fix;
   lastFixAt = Date.now();
+  if (gpsLostSpoken) {
+    gpsLostSpoken = false;
+    voice.alert('link', 'GPS is back.');
+  }
   truck.update(fix);
   routing.update(fix);
+  alerts.onFix(fix);
+  truckCheck.onFix(fix);
   const nowMoving = fix.speed !== null && fix.speed >= MOVING_SPEED_MPS;
   if (nowMoving !== moving) {
     moving = nowMoving;
     cameras.refresh();
+    truckCheck.refresh();
   }
   updateStatus();
 }
@@ -180,7 +222,10 @@ $('btn-route').addEventListener('click', () => routing.openSearch());
 $('btn-radio').addEventListener('click', () => radio.openList());
 $('btn-zoom-in').addEventListener('click', () => map.zoomIn(1, { animate: false }));
 $('btn-zoom-out').addEventListener('click', () => map.zoomOut(1, { animate: false }));
-$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText }));
+function openVoice() {
+  openVoicePanel({ settings, save: applySettings, voice, truckCheck, lastFix: () => lastFix });
+}
+$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, openVoice }));
 $('btn-recenter').addEventListener('click', () => truck.setFollowing(true));
 $('btn-sheet-close').addEventListener('click', closeSheet);
 map.on('contextmenu', (e) => routing.confirmPoint(e.latlng));

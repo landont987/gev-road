@@ -15,6 +15,7 @@ import { CALL_PACKS, groupName } from './calls-groups.js';
 import { createCallsPlayer, hasCallsKeys } from './calls.js';
 import { distanceM } from './geo.js';
 import { el, openSheet, closeSheet, toast } from './ui.js';
+import { trackPlayer } from './audio-duck.js';
 
 const STORE_KEY = 'gev-road-radio';
 const MY_SCANNER_RETRY_MS = 4000;
@@ -195,6 +196,7 @@ export function createRadio(app) {
     stopMine();
     stopCalls();
     audio = new Audio();
+    trackPlayer(audio);
     audio.preload = 'none';
     audio.onplaying = () => {
       clearTimeout(audioRetry);

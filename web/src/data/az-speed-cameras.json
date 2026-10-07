@@ -1,0 +1,188 @@
+{
+ "source": "OpenStreetMap contributors (ODbL), via Overpass",
+ "osmBase": "2026-10-07T07:22:24Z",
+ "cameras": [
+  {
+   "id": "1759242276",
+   "kind": "speed",
+   "lat": 33.4250629,
+   "lon": -111.9611909,
+   "maxspeedMph": 40
+  },
+  {
+   "id": "2502872591",
+   "kind": "speed",
+   "lat": 33.6343531,
+   "lon": -111.9076845,
+   "maxspeedMph": 45
+  },
+  {
+   "id": "3517457644",
+   "kind": "speed",
+   "lat": 33.5534996,
+   "lon": -111.9755263,
+   "maxspeedMph": null
+  },
+  {
+   "id": "3517461067",
+   "kind": "speed",
+   "lat": 33.5312759,
+   "lon": -111.9345422,
+   "maxspeedMph": null
+  },
+  {
+   "id": "6237189551",
+   "kind": "speed",
+   "lat": 33.3197238,
+   "lon": -111.9759484,
+   "maxspeedMph": 40
+  },
+  {
+   "id": "6237189803",
+   "kind": "speed",
+   "lat": 33.3197312,
+   "lon": -111.9764282,
+   "maxspeedMph": 40
+  },
+  {
+   "id": "6237190254",
+   "kind": "speed",
+   "lat": 33.3200581,
+   "lon": -111.9759268,
+   "maxspeedMph": 40
+  },
+  {
+   "id": "7347546095",
+   "kind": "speed",
+   "lat": 33.3905419,
+   "lon": -111.6845817,
+   "maxspeedMph": null
+  },
+  {
+   "id": "7570448944",
+   "kind": "speed",
+   "lat": 33.422519,
+   "lon": -111.8226973,
+   "maxspeedMph": null
+  },
+  {
+   "id": "7571869143",
+   "kind": "speed",
+   "lat": 33.4081113,
+   "lon": -111.8052128,
+   "maxspeedMph": null
+  },
+  {
+   "id": "7571869144",
+   "kind": "speed",
+   "lat": 33.4077757,
+   "lon": -111.8054962,
+   "maxspeedMph": null
+  },
+  {
+   "id": "7940362152",
+   "kind": "speed",
+   "lat": 33.292122,
+   "lon": -111.6348329,
+   "maxspeedMph": null
+  },
+  {
+   "id": "8645432450",
+   "kind": "speed",
+   "lat": 33.3936123,
+   "lon": -111.7948758,
+   "maxspeedMph": null
+  },
+  {
+   "id": "9132362982",
+   "kind": "speed",
+   "lat": 33.4115501,
+   "lon": -111.9681864,
+   "maxspeedMph": null
+  },
+  {
+   "id": "9132362983",
+   "kind": "speed",
+   "lat": 33.4819439,
+   "lon": -112.0999808,
+   "maxspeedMph": null
+  },
+  {
+   "id": "13271351856",
+   "kind": "speed",
+   "lat": 32.2359546,
+   "lon": -110.9686991,
+   "maxspeedMph": null
+  },
+  {
+   "id": "13296925187",
+   "kind": "speed",
+   "lat": 33.4220338,
+   "lon": -111.96051,
+   "maxspeedMph": null
+  },
+  {
+   "id": "13613629272",
+   "kind": "speed",
+   "lat": 33.4803157,
+   "lon": -111.9433685,
+   "maxspeedMph": null
+  },
+  {
+   "id": "13613629273",
+   "kind": "speed",
+   "lat": 33.480404,
+   "lon": -111.9346293,
+   "maxspeedMph": null
+  },
+  {
+   "id": "13613629274",
+   "kind": "speed",
+   "lat": 33.480489,
+   "lon": -111.9173869,
+   "maxspeedMph": null
+  },
+  {
+   "id": "13613629275",
+   "kind": "speed",
+   "lat": 33.4805438,
+   "lon": -111.9087278,
+   "maxspeedMph": null
+  },
+  {
+   "id": "14180521508",
+   "kind": "redlight",
+   "lat": 33.4073188,
+   "lon": -111.9261237,
+   "maxspeedMph": 46
+  },
+  {
+   "id": "14180521509",
+   "kind": "redlight",
+   "lat": 33.4289681,
+   "lon": -111.9259865,
+   "maxspeedMph": 51
+  },
+  {
+   "id": "14253944642",
+   "kind": "redlight",
+   "lat": 33.3926245,
+   "lon": -111.9394311,
+   "maxspeedMph": 51
+  },
+  {
+   "id": "14253944643",
+   "kind": "redlight",
+   "lat": 33.4073608,
+   "lon": -111.909506,
+   "maxspeedMph": 56
+  },
+  {
+   "id": "14253944644",
+   "kind": "redlight",
+   "lat": 33.4221232,
+   "lon": -111.9087318,
+   "maxspeedMph": 51
+  }
+ ]
+}

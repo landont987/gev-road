@@ -95,3 +95,31 @@ export function parseAz511Api(json, imageBase) {
   }
   return cameras;
 }
+
+const KMH_TO_MPH = 0.621371;
+
+/** "40 mph" -> 40; a bare number is km/h in OpenStreetMap. */
+function maxspeedMph(text) {
+  const m = /^(\d+)\s*(mph)?$/.exec(String(text || '').trim());
+  if (!m) return null;
+  return m[2] ? Number(m[1]) : Math.round(Number(m[1]) * KMH_TO_MPH);
+}
+
+/**
+ * Speed and red-light cameras from an Overpass answer for node["highway"="speed_camera"].
+ * Flock plate readers mis-tagged as speed cameras are dropped: DeFlock already shows them.
+ */
+export function parseSpeedCameras(json) {
+  const elements = (json && json.elements) || [];
+  const cameras = [];
+  for (const e of elements) {
+    const t = (e && e.tags) || {};
+    const lat = Number(e && e.lat);
+    const lon = Number(e && e.lon);
+    if (e.type !== 'node' || t.highway !== 'speed_camera' || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    if (t['surveillance:type'] === 'ALPR') continue;
+    const redlight = t.surveillance === 'red_light' || /red light/i.test(t.description || '');
+    cameras.push({ id: String(e.id), kind: redlight ? 'redlight' : 'speed', lat, lon, maxspeedMph: maxspeedMph(t.maxspeed) });
+  }
+  return cameras;
+}

@@ -19,6 +19,7 @@
 
 import { KEYS, BCFY_AUTH_URL, BCFY_LIVE_URL, BCFY_POLL_MS, BCFY_TOKEN_TTL_S } from './config.js';
 import { nativeFetch } from './native-fetch.js';
+import { trackPlayer } from './audio-duck.js';
 
 const MAX_QUEUE = 12; // older calls are dropped so the player never falls far behind live
 
@@ -148,6 +149,7 @@ export function createCallsPlayer(callbacks) {
       seen = {};
       queue = [];
       audio = new Audio();
+      trackPlayer(audio);
       audio.preload = 'auto';
       audio.onended = playNext;
       audio.onerror = () => {

@@ -2,7 +2,23 @@
 // Storage can throw on some WebViews, so every access is guarded.
 
 const KEY = 'gev-road-settings';
-const DEFAULTS = { cameras: true, plates: true, traffic: false, lowData: false, drive: false };
+const DEFAULTS = {
+  cameras: true,
+  plates: true,
+  traffic: false,
+  lowData: false,
+  drive: false,
+  // Spoken alerts (see voice.js) and the AI truck check (truck-check.js).
+  voice: true,
+  sayPlates: true,
+  sayCameras: true,
+  sayEnforcement: true,
+  sayTrip: true,
+  sayLink: true,
+  voiceName: 'cedar',
+  voiceAccent: 'american',
+  truckCheck: true,
+};
 
 export function loadSettings() {
   try {

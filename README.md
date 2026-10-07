@@ -14,6 +14,9 @@ drops the 3D globe, which is too heavy for the unit.
 - **Traffic:** live congestion colors (needs a free TomTom key).
 - **Low data:** turns off traffic and camera pictures and stops the map zooming past street level, to save the hotspot. A banner suggests it after 100 MB.
 - **Drive mode:** four big buttons, big speed, map locked to the truck.
+- **Spoken alerts:** "Plate reader ahead", "You're in view of the I 10 at Tunnel camera", "Speed camera ahead, 40 miles per hour", "Red light camera ahead", hotspot data over 100 MB, off route, GPS lost or back, hotspot lost or back. Each has its own switch under ☰ → VOICE, ALERTS AND AI CHECK. Same-name ADOT cameras along a stretch speak once.
+- **AI voice:** with an OpenAI key, pick one of 13 voices and 30 accents (Arabic, Chinese, Indian, British and more). Clips are cached, so a repeated alert costs nothing. Without the key, offline, or in low data mode, the unit's own text-to-speech voice speaks (needs "Speech Services by Google" or another engine on the unit).
+- **AI truck check:** stopped for 10 seconds within 300 m of an ADOT camera, the app sends that camera's picture to Claude with your truck photo and description, once per stop. If your truck looks to be in it, it says so and shows the picture with the truck boxed. About 1 to 2 cents and half a MB each; off in low data mode. It is an AI guess: trucks look alike.
 - **Radio:** police, fire and highway patrol while you drive, three ways:
   - *Live calls, played here:* Phoenix Police precinct dispatch, Phoenix Fire, DPS freeways, Chandler, Avondale and Sky Harbor, played inside the app from the Broadcastify Calls API (needs the prepaid keys below plus your Broadcastify login, typed once into the app).
   - *Live public safety feeds:* 24 Broadcastify and OpenMHz feeds for Phoenix and Tucson, nearest first, live only (delayed feeds are left out). Each opens that site's own page in a drawer over the map (their terms do not allow pulling the audio into another app); press play on their page, fold the drawer with HIDE and the audio keeps going.
@@ -36,6 +39,9 @@ drops the 3D globe, which is too heavy for the unit.
 | Public feeds | Broadcastify feed pages and OpenMHz system pages, opened as-is | none |
 | County feed list | Broadcastify county pages, opened as-is; county from `geo.fcc.gov/api/census/area` | none |
 | Radio stations | Radio Browser `de1.api.radio-browser.info` (PDDL directory); streams straight from each broadcaster | none |
+| Speed and red-light cameras | OpenStreetMap via Overpass (`node["highway"="speed_camera"]` in Arizona), bundled in `web/src/data/az-speed-cameras.json` (26 cameras, 2026-10-07) and refreshed daily when Overpass answers | none |
+| AI voice | OpenAI `gpt-4o-mini-tts` at `api.openai.com/v1/audio/speech` | OpenAI API key (pay per use) |
+| AI truck check | Anthropic Messages API, `claude-opus-5-5`, at `api.anthropic.com/v1/messages` | Anthropic API key (pay per use) |
 
 Not used, and why: CARTO dark tiles now need a key. AZ511's `/list/getdata/`
 and `/map/map*/` paths are blocked by its robots.txt, so camera lists come from
@@ -51,9 +57,17 @@ Put keys in `keys.local.json` (never committed):
   "az511": "your-az511-developer-key",
   "bcfyKeyId": "key id from bcfy.io/dev",
   "bcfySecret": "key secret from bcfy.io/dev",
-  "bcfyAppId": "app id from bcfy.io/dev"
+  "bcfyAppId": "app id from bcfy.io/dev",
+  "openai": "OpenAI API key (AI voice)",
+  "anthropic": "Anthropic API key (AI truck check)",
+  "truckDescription": "year, make, model, color and what stands out"
 }
 ```
+
+For the AI truck check, also save a photo of your truck as `truck.local.jpg`
+(about 768 px on the long side; never committed). Keys are built into the
+APK, so keep the APK to yourself and set a monthly spending limit on the
+OpenAI and Anthropic accounts.
 
 Every key is optional. Without `az511` the camera list is the AZGeo copy (last
 edited 2026-03-16). Without the three `bcfy` values the LIVE CALLS section only

@@ -1,0 +1,307 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-07T07:22:24Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 1759242276,
+  "lat": 33.4250629,
+  "lon": -111.9611909,
+  "tags": {
+    "highway": "speed_camera",
+    "maxspeed": "40 mph"
+  }
+},
+{
+  "type": "node",
+  "id": 2502872591,
+  "lat": 33.6343531,
+  "lon": -111.9076845,
+  "tags": {
+    "highway": "speed_camera",
+    "maxspeed": "45 mph"
+  }
+},
+{
+  "type": "node",
+  "id": 3517457644,
+  "lat": 33.5534996,
+  "lon": -111.9755263,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 3517461067,
+  "lat": 33.5312759,
+  "lon": -111.9345422,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 6237189551,
+  "lat": 33.3197238,
+  "lon": -111.9759484,
+  "tags": {
+    "highway": "speed_camera",
+    "maxspeed": "40 mph"
+  }
+},
+{
+  "type": "node",
+  "id": 6237189803,
+  "lat": 33.3197312,
+  "lon": -111.9764282,
+  "tags": {
+    "highway": "speed_camera",
+    "maxspeed": "40 mph"
+  }
+},
+{
+  "type": "node",
+  "id": 6237190254,
+  "lat": 33.3200581,
+  "lon": -111.9759268,
+  "tags": {
+    "highway": "speed_camera",
+    "maxspeed": "40 mph"
+  }
+},
+{
+  "type": "node",
+  "id": 7347546095,
+  "lat": 33.3905419,
+  "lon": -111.6845817,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 7570448944,
+  "lat": 33.4225190,
+  "lon": -111.8226973,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 7571869143,
+  "lat": 33.4081113,
+  "lon": -111.8052128,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 7571869144,
+  "lat": 33.4077757,
+  "lon": -111.8054962,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 7940362152,
+  "lat": 33.2921220,
+  "lon": -111.6348329,
+  "tags": {
+    "direction": "340",
+    "highway": "speed_camera",
+    "owner": "City of Mesa"
+  }
+},
+{
+  "type": "node",
+  "id": 8196828915,
+  "lat": 33.8025106,
+  "lon": -112.1326753,
+  "tags": {
+    "camera:type": "fixed",
+    "direction": "180",
+    "highway": "speed_camera",
+    "manufacturer": "Flock Safety",
+    "manufacturer:wikidata": "Q108485435",
+    "surveillance:type": "ALPR"
+  }
+},
+{
+  "type": "node",
+  "id": 8645432450,
+  "lat": 33.3936123,
+  "lon": -111.7948758,
+  "tags": {
+    "direction": "245",
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 9132362982,
+  "lat": 33.4115501,
+  "lon": -111.9681864,
+  "tags": {
+    "direction": "forward",
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 9132362983,
+  "lat": 33.4819439,
+  "lon": -112.0999808,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 13271351856,
+  "lat": 32.2359546,
+  "lon": -110.9686991,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 13296925187,
+  "lat": 33.4220338,
+  "lon": -111.9605100,
+  "tags": {
+    "direction": "255",
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 13613629272,
+  "lat": 33.4803157,
+  "lon": -111.9433685,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 13613629273,
+  "lat": 33.4804040,
+  "lon": -111.9346293,
+  "tags": {
+    "highway": "speed_camera",
+    "man_made": "tower",
+    "tower": "communication"
+  }
+},
+{
+  "type": "node",
+  "id": 13613629274,
+  "lat": 33.4804890,
+  "lon": -111.9173869,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 13613629275,
+  "lat": 33.4805438,
+  "lon": -111.9087278,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 14180521508,
+  "lat": 33.4073188,
+  "lon": -111.9261237,
+  "tags": {
+    "description": "Red Light & Speed Camera",
+    "direction": "330",
+    "highway": "speed_camera",
+    "maxspeed": "46 mph",
+    "operator": "City of Tempe",
+    "surveillance": "red_light",
+    "surveillance:zone": "traffic",
+    "website": "https://www.tempe.gov/government/police/traffic-section/photo-enforcement"
+  }
+},
+{
+  "type": "node",
+  "id": 14180521509,
+  "lat": 33.4289681,
+  "lon": -111.9259865,
+  "tags": {
+    "description": "Red Light & Speed Camera for WB and WB to SB traffic",
+    "direction": "240",
+    "highway": "speed_camera",
+    "maxspeed": "51 mph",
+    "operator": "City of Tempe",
+    "surveillance": "red_light",
+    "surveillance:zone": "traffic",
+    "website": "https://www.tempe.gov/government/police/traffic-section/photo-enforcement"
+  }
+},
+{
+  "type": "node",
+  "id": 14253944642,
+  "lat": 33.3926245,
+  "lon": -111.9394311,
+  "tags": {
+    "description": "Red Light & Speed Camera",
+    "direction": "330",
+    "highway": "speed_camera",
+    "maxspeed": "51 mph",
+    "operator": "City of Tempe",
+    "surveillance": "red_light",
+    "surveillance:zone": "traffic",
+    "website": "https://www.tempe.gov/government/police/traffic-section/photo-enforcement"
+  }
+},
+{
+  "type": "node",
+  "id": 14253944643,
+  "lat": 33.4073608,
+  "lon": -111.9095060,
+  "tags": {
+    "description": "Red Light & Speed Camera",
+    "direction": "60",
+    "highway": "speed_camera",
+    "maxspeed": "56 mph",
+    "operator": "City of Tempe",
+    "surveillance": "red_light",
+    "surveillance:zone": "traffic",
+    "website": "https://www.tempe.gov/government/police/traffic-section/photo-enforcement"
+  }
+},
+{
+  "type": "node",
+  "id": 14253944644,
+  "lat": 33.4221232,
+  "lon": -111.9087318,
+  "tags": {
+    "description": "Red Light & Speed Camera",
+    "direction": "240",
+    "highway": "speed_camera",
+    "maxspeed": "51 mph",
+    "operator": "City of Tempe",
+    "surveillance": "red_light",
+    "surveillance:zone": "traffic",
+    "website": "https://www.tempe.gov/government/police/traffic-section/photo-enforcement"
+  }
+}
+
+  ]
+}

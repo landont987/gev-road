@@ -430,3 +430,28 @@ body.drive #status .speed {
 #toast {
   bottom: calc(110px + var(--drawer));
 }
+
+/* VOICE panel: voice and accent choices wrap in rows (no flex gap on the old WebView). */
+.choices {
+  margin-top: 6px;
+}
+.choice {
+  margin: 0 8px 8px 0;
+}
+.choices-title {
+  margin: 12px 0 4px;
+  font-size: 14px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+
+/* AI truck check: the camera picture with the match boxed. */
+.snap {
+  position: relative;
+}
+.snap-box {
+  position: absolute;
+  border: 3px solid var(--warn);
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+}

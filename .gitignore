@@ -1,6 +1,7 @@
 node_modules/
 web/dist/
 keys.local.json
+truck.local.jpg
 android/.gradle/
 android/build/
 android/app/build/

@@ -1,7 +1,8 @@
 // Bundles web/src into web/dist (one app.js + static files).
 // `--android` also copies the result into the Android app's assets.
 // Keys come from keys.local.json (never committed); missing keys just leave
-// those features switched off.
+// those features switched off. truck.local.jpg (never committed), a photo of
+// the driver's truck, ships as truck.jpg for the AI truck check.
 
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
@@ -23,6 +24,9 @@ export function readKeys() {
     bcfyKeyId: read('bcfyKeyId'),
     bcfySecret: read('bcfySecret'),
     bcfyAppId: read('bcfyAppId'),
+    openai: read('openai'),
+    anthropic: read('anthropic'),
+    truckDescription: read('truckDescription'),
   };
 }
 
@@ -45,6 +49,10 @@ export function copyStatic() {
   fs.copyFileSync(path.join(root, 'web', 'index.html'), path.join(dist, 'index.html'));
   fs.copyFileSync(path.join(root, 'web', 'style.css'), path.join(dist, 'style.css'));
   fs.copyFileSync(path.join(root, 'node_modules', 'leaflet', 'dist', 'leaflet.css'), path.join(dist, 'leaflet.css'));
+  const truckPhoto = path.join(root, 'truck.local.jpg');
+  const shipped = path.join(dist, 'truck.jpg');
+  if (fs.existsSync(truckPhoto)) fs.copyFileSync(truckPhoto, shipped);
+  else fs.rmSync(shipped, { force: true });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

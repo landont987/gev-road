@@ -1,6 +1,7 @@
 package com.landon.gevroad;
 
 import android.content.Context;
+import android.util.Base64;
 import android.util.Log;
 
 import org.conscrypt.Conscrypt;
@@ -14,6 +15,8 @@ import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.SSLContext;
@@ -35,6 +38,12 @@ import okhttp3.ResponseBody;
  *  - routing.openstreetmap.de only speaks TLS 1.3. Android 9 and its 2018
  *    WebView stop at TLS 1.2, so requests go through Conscrypt (Google's TLS
  *    library, bundled) via OkHttp, which turn TLS 1.3 on.
+ *  - api.openai.com (spoken alerts, see Speech) and api.anthropic.com (the AI
+ *    truck check) take the driver's keys in headers the page should not have
+ *    to send cross-origin.
+ *  - az511.com camera pictures: scripted requests get two
+ *    Access-Control-Allow-Origin values, which browsers reject, so the AI truck
+ *    check fetches the picture bytes here.
  * Trust is Android's own roots plus ISRG Root X2 (res/raw), which Android 9
  * lacks and Let's Encrypt's newer certificates chain to.
  * Only the host and method pairs in ALLOWED may be called; the page never gets
@@ -47,8 +56,12 @@ final class NativeHttp {
     private static final String[][] ALLOWED = {
             {"api.bcfy.io", "GET", "POST"},
             {"routing.openstreetmap.de", "GET"},
+            {"api.openai.com", "POST"},
+            {"api.anthropic.com", "POST"},
+            {"az511.com", "GET"},
     };
     private static final int TIMEOUT_MS = 20000;
+    private static final int MAX_TIMEOUT_MS = 90000;
     private static final int MAX_BODY = 2 * 1024 * 1024;
 
     private static Context appContext;
@@ -60,6 +73,17 @@ final class NativeHttp {
         final String body;
 
         Result(int status, String body) {
+            this.status = status;
+            this.body = body;
+        }
+    }
+
+    /** The same, with the body as raw bytes (pictures, audio). */
+    static final class BytesResult {
+        final int status;
+        final byte[] body;
+
+        BytesResult(int status, byte[] body) {
             this.status = status;
             this.body = body;
         }
@@ -90,28 +114,60 @@ final class NativeHttp {
     }
 
     static Result request(String method, String urlText, String authorization, String contentType, String body) {
-        if (!allowed(method, urlText)) return new Result(0, "refused: host or method not allowed");
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (authorization != null && !authorization.isEmpty()) headers.put("Authorization", authorization);
+        if (contentType != null && !contentType.isEmpty()) headers.put("Content-Type", contentType);
+        return request(method, urlText, headers, body, false, TIMEOUT_MS);
+    }
+
+    /** Any headers; with base64 the body comes back as base64 text (for pictures). */
+    static Result request(String method, String urlText, Map<String, String> headers, String body,
+                          boolean base64, int timeoutMs) {
+        byte[] payload = body == null || body.isEmpty() ? null : body.getBytes(StandardCharsets.UTF_8);
+        BytesResult raw = requestBytes(method, urlText, headers, payload, timeoutMs);
+        if (raw.status == 0 || !base64) return new Result(raw.status, new String(raw.body, StandardCharsets.UTF_8));
+        return new Result(raw.status, Base64.encodeToString(raw.body, Base64.NO_WRAP));
+    }
+
+    static BytesResult requestBytes(String method, String urlText, Map<String, String> headers, byte[] body,
+                                    int timeoutMs) {
+        if (!allowed(method, urlText)) return failed("refused: host or method not allowed");
         try {
             Request.Builder req = new Request.Builder()
                     .url(urlText)
                     .header("User-Agent", "GEVRoad/" + BuildConfig.VERSION_NAME)
                     .header("Accept", "application/json");
-            if (authorization != null && !authorization.isEmpty()) req.header("Authorization", authorization);
-            RequestBody payload = null;
-            if (body != null && !body.isEmpty()) {
-                String type = contentType == null || contentType.isEmpty()
-                        ? "application/x-www-form-urlencoded" : contentType;
-                payload = RequestBody.create(body.getBytes(StandardCharsets.UTF_8), MediaType.parse(type));
+            String contentType = "application/x-www-form-urlencoded";
+            for (Map.Entry<String, String> h : headers.entrySet()) {
+                if ("Content-Type".equalsIgnoreCase(h.getKey())) contentType = h.getValue();
+                else req.header(h.getKey(), h.getValue());
             }
+            RequestBody payload = body == null ? null : RequestBody.create(body, MediaType.parse(contentType));
             req.method(method, payload);
-            try (Response res = client().newCall(req.build()).execute()) {
+            try (Response res = client(timeoutMs).newCall(req.build()).execute()) {
                 ResponseBody resBody = res.body();
-                return new Result(res.code(), readAll(resBody == null ? null : resBody.byteStream()));
+                return new BytesResult(res.code(), readAll(resBody == null ? null : resBody.byteStream()));
             }
         } catch (IOException | GeneralSecurityException | IllegalArgumentException e) {
             Log.w(TAG, method + " " + urlText + " failed", e);
-            return new Result(0, "network: " + e.getMessage());
+            return failed("network: " + e.getMessage());
         }
+    }
+
+    private static BytesResult failed(String why) {
+        return new BytesResult(0, why.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** The shared client, or a copy with longer timeouts (an AI answer can take a while). */
+    private static OkHttpClient client(int timeoutMs) throws GeneralSecurityException, IOException {
+        int ms = Math.max(1000, Math.min(MAX_TIMEOUT_MS, timeoutMs));
+        if (ms == TIMEOUT_MS) return client();
+        return client().newBuilder()
+                .connectTimeout(Math.min(ms, TIMEOUT_MS), TimeUnit.MILLISECONDS)
+                .readTimeout(ms, TimeUnit.MILLISECONDS)
+                .writeTimeout(ms, TimeUnit.MILLISECONDS)
+                .callTimeout(ms, TimeUnit.MILLISECONDS)
+                .build();
     }
 
     private static synchronized OkHttpClient client() throws GeneralSecurityException, IOException {
@@ -152,8 +208,8 @@ final class NativeHttp {
         throw new GeneralSecurityException("no X509 trust manager");
     }
 
-    private static String readAll(InputStream in) throws IOException {
-        if (in == null) return "";
+    private static byte[] readAll(InputStream in) throws IOException {
+        if (in == null) return new byte[0];
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         byte[] chunk = new byte[8192];
         int n;
@@ -161,6 +217,6 @@ final class NativeHttp {
             buf.write(chunk, 0, n);
             if (buf.size() > MAX_BODY) throw new IOException("response over " + MAX_BODY + " bytes");
         }
-        return buf.toString("UTF-8");
+        return buf.toByteArray();
     }
 }

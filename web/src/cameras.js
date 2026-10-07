@@ -18,6 +18,7 @@ const OFFLINE_CARD = { w: 540, h: 330 }; // measured on offline cameras 1215 and
 export function createCameras(map, app) {
   const group = L.layerGroup();
   let loading = null;
+  let all = []; // every camera, for the spoken alerts and the AI truck check
   let current = null; // camera whose sheet is open
   let picture = null; // <img> currently loading or shown
   let pictureTimer = null;
@@ -45,6 +46,7 @@ export function createCameras(map, app) {
     const cached = readCache(CACHE_KEY, CAMERA_LIST_TTL_MS);
     loading = (cached ? Promise.resolve(cached) : fetchList()).then(
       (cams) => {
+        all = cams;
         for (const cam of cams) {
           dot(cam.lat, cam.lon, 'camera', () => show(cam)).addTo(group);
         }
@@ -148,6 +150,11 @@ export function createCameras(map, app) {
       } else {
         map.removeLayer(group);
       }
+    },
+    /** Every camera, loading the list in the background if needed (also with the layer off). */
+    list() {
+      load();
+      return all;
     },
     /** Moving or low data changed: hide a picture that is no longer allowed. */
     refresh() {
