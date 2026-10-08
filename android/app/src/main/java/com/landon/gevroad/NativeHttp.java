@@ -42,7 +42,7 @@ import okhttp3.ResponseBody;
  *  - routing.openstreetmap.de only speaks TLS 1.3. Android 9 and its 2018
  *    WebView stop at TLS 1.2, so requests go through Conscrypt (Google's TLS
  *    library, bundled) via OkHttp, which turn TLS 1.3 on.
- *  - api.openai.com (spoken alerts, see Speech) and api.anthropic.com (the AI
+ *  - api.openai.com (spoken alerts, see Speech) and generativelanguage.googleapis.com (the AI
  *    truck check) take the driver's keys in headers the page should not have
  *    to send cross-origin.
  *  - az511.com camera pictures: scripted requests get two
@@ -61,14 +61,14 @@ final class NativeHttp {
             {"api.bcfy.io", "GET", "POST"},
             {"routing.openstreetmap.de", "GET"},
             {"api.openai.com", "POST"},
-            {"api.anthropic.com", "POST"},
+            {"generativelanguage.googleapis.com", "POST"},
             {"az511.com", "GET"},
     };
     private static final int TIMEOUT_MS = 20000;
     private static final int MAX_TIMEOUT_MS = 90000;
     /** The only request headers the page may set (lower case). */
     private static final Set<String> HEADERS = new HashSet<>(Arrays.asList(
-            "authorization", "x-api-key", "anthropic-version", "content-type", "accept"));
+            "authorization", "x-goog-api-key", "content-type", "accept"));
     private static final int MAX_BODY = 2 * 1024 * 1024;
 
     private static Context appContext;
@@ -78,10 +78,17 @@ final class NativeHttp {
     static final class Result {
         final int status;
         final String body;
+        /** The Age header in seconds (how long a cache has held the answer), or -1. */
+        final int ageSeconds;
 
         Result(int status, String body) {
+            this(status, body, -1);
+        }
+
+        Result(int status, String body, int ageSeconds) {
             this.status = status;
             this.body = body;
+            this.ageSeconds = ageSeconds;
         }
     }
 
@@ -89,10 +96,16 @@ final class NativeHttp {
     static final class BytesResult {
         final int status;
         final byte[] body;
+        final int ageSeconds;
 
         BytesResult(int status, byte[] body) {
+            this(status, body, -1);
+        }
+
+        BytesResult(int status, byte[] body, int ageSeconds) {
             this.status = status;
             this.body = body;
+            this.ageSeconds = ageSeconds;
         }
     }
 
@@ -135,8 +148,10 @@ final class NativeHttp {
                           boolean base64, int timeoutMs) {
         byte[] payload = body == null || body.isEmpty() ? null : body.getBytes(StandardCharsets.UTF_8);
         BytesResult raw = requestBytes(method, urlText, headers, payload, timeoutMs);
-        if (raw.status == 0 || !base64) return new Result(raw.status, new String(raw.body, StandardCharsets.UTF_8));
-        return new Result(raw.status, Base64.encodeToString(raw.body, Base64.NO_WRAP));
+        if (raw.status == 0 || !base64) {
+            return new Result(raw.status, new String(raw.body, StandardCharsets.UTF_8), raw.ageSeconds);
+        }
+        return new Result(raw.status, Base64.encodeToString(raw.body, Base64.NO_WRAP), raw.ageSeconds);
     }
 
     static BytesResult requestBytes(String method, String urlText, Map<String, String> headers, byte[] body,
@@ -159,7 +174,8 @@ final class NativeHttp {
             req.method(method, payload);
             try (Response res = client(timeoutMs).newCall(req.build()).execute()) {
                 ResponseBody resBody = res.body();
-                return new BytesResult(res.code(), readAll(resBody == null ? null : resBody.byteStream()));
+                return new BytesResult(res.code(), readAll(resBody == null ? null : resBody.byteStream()),
+                        ageSeconds(res.header("Age")));
             }
         } catch (IllegalArgumentException e) {
             // OkHttp's message can repeat a bad header's value, which may be a key: never log it.
@@ -168,6 +184,17 @@ final class NativeHttp {
         } catch (IOException | GeneralSecurityException e) {
             Log.w(TAG, method + " " + url.host() + " failed", e);
             return failed("network: " + e.getMessage());
+        }
+    }
+
+    /** A cache's Age header in whole seconds, or -1 when missing or not a number. */
+    static int ageSeconds(String header) {
+        if (header == null) return -1;
+        try {
+            int age = Integer.parseInt(header.trim());
+            return age < 0 ? -1 : age;
+        } catch (NumberFormatException e) {
+            return -1;
         }
     }
 

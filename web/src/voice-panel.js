@@ -81,7 +81,7 @@ export function openVoicePanel(ctx) {
     el(
       'p',
       { class: 'sheet-sub' },
-      'When you stop near an ADOT camera, Claude looks at its picture for your truck, once per stop. About 1 to 2 cents and half a MB each.',
+      'A few seconds after you stop near an ADOT camera, Gemini looks at its picture for your truck, and again on the camera\'s next picture if it did not see it. Free on Gemini\'s free tier (Google may use the pictures to improve its products). About a third of a MB each.',
     ),
   );
   body.appendChild(toggle('truckCheck', 'AI TRUCK CHECK'));

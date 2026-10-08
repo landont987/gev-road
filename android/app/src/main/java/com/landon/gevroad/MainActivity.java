@@ -322,7 +322,7 @@ public class MainActivity extends Activity {
 
         /**
          * One HTTPS request made by the app for the page (hosts limited in NativeHttp).
-         * The answer comes back through window.gevOnHttp(id, status, body).
+         * The answer comes back through window.gevOnHttp(id, status, body, ageSeconds).
          */
         @JavascriptInterface
         public void http(final int id, final String method, final String url, final String authorization,
@@ -336,7 +336,7 @@ public class MainActivity extends Activity {
                     result = new NativeHttp.Result(0, "app error: " + e.getClass().getSimpleName());
                 }
                 final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
-                        + JSONObject.quote(result.body) + ")";
+                        + JSONObject.quote(result.body) + "," + result.ageSeconds + ")";
                 runOnUiThread(() -> js(js));
             }, "gev-http-" + id).start();
         }
@@ -344,7 +344,7 @@ public class MainActivity extends Activity {
         /**
          * Like http, with any headers (a JSON object of name: value), a timeout,
          * and, with base64, the body answered as base64 text (for pictures).
-         * The answer comes back through window.gevOnHttp(id, status, body).
+         * The answer comes back through window.gevOnHttp(id, status, body, ageSeconds).
          */
         @JavascriptInterface
         public void httpEx(final int id, final String method, final String url, final String headersJson,
@@ -360,7 +360,7 @@ public class MainActivity extends Activity {
                     result = new NativeHttp.Result(0, "app error: " + e.getClass().getSimpleName());
                 }
                 final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
-                        + JSONObject.quote(result.body) + ")";
+                        + JSONObject.quote(result.body) + "," + result.ageSeconds + ")";
                 runOnUiThread(() -> js(js));
             }, "gev-http-" + id).start();
         }

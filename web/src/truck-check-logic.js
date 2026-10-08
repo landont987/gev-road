@@ -1,7 +1,7 @@
 // The AI truck check's request and answer: is the driver's truck on this
 // traffic camera picture? Pure: no DOM, no network.
 
-const MAX_TOKENS = 400;
+const MAX_TOKENS = 2048; // room for its short thinking plus the JSON
 const CONFIDENCE = { low: true, medium: true, high: true };
 const OFFLINE_CARD = { type: 'png', width: 540, height: 330 }; // AZ511's "no live feed" picture
 
@@ -36,70 +36,72 @@ export function bytesFromBase64(b64) {
   return bytes;
 }
 
-const imageBlock = (img) => ({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.base64 } });
+const imagePart = (img) => ({ inline_data: { mime_type: img.mediaType, data: img.base64 } });
+
+const SYSTEM =
+  "You check one still picture from an Arizona DOT traffic camera for one specific truck: the driver's own. " +
+  'You answer with JSON only.';
 
 /**
- * Body for POST /v1/messages. camera: { base64, mediaType, width, height };
- * reference: the driver's own truck photo, or null.
+ * Body for Gemini's generateContent. camera: { base64, mediaType };
+ * reference: the driver's own truck photos (one picture), or null.
  */
-export function truckCheckBody({ model, camera, reference, description }) {
-  const content = [];
+export function truckCheckBody({ camera, reference, description }) {
+  const parts = [];
   if (reference) {
-    content.push({ type: 'text', text: "Image 1: photos of the driver's own truck (front, and back corner)." }, imageBlock(reference));
+    parts.push({ text: "Image 1: photos of the driver's own truck (front, and back corner)." }, imagePart(reference));
   }
   const camLabel = reference ? 'Image 2' : 'Image 1';
-  content.push({ type: 'text', text: `${camLabel}: the traffic camera picture, ${camera.width} x ${camera.height} pixels.` });
-  content.push(imageBlock(camera));
-  content.push({
-    type: 'text',
+  parts.push({ text: `${camLabel}: the traffic camera picture.` }, imagePart(camera));
+  parts.push({
     text:
       `The driver's truck: ${description || 'a pickup truck (no description given)'}.\n` +
       `Is a vehicle that matches the driver's truck visible in ${camLabel}? Match on body style, make and model, ` +
       'color, and stand-out features. Many trucks look alike, so set found to true only when the match is clear. ' +
       'Do not read or report license plates and do not describe people.\n' +
       'Answer with only this JSON:\n' +
-      `{"found": true or false, "confidence": "low" or "medium" or "high", "box": [x1, y1, x2, y2] around the matching vehicle in ${camLabel} pixel coordinates, or null, "note": "one short sentence, such as where in the picture it is"}`,
+      `{"found": true or false, "confidence": "low" or "medium" or "high", "box_2d": [ymin, xmin, ymax, xmax] around the matching vehicle in ${camLabel}, normalized to 0-1000, or null, "note": "one short sentence, such as where in the picture it is"}`,
   });
   return {
-    model,
-    max_tokens: MAX_TOKENS,
-    system:
-      "You check one still picture from an Arizona DOT traffic camera for one specific truck: the driver's own. " +
-      'You answer with JSON only.',
-    messages: [{ role: 'user', content }],
+    system_instruction: { parts: [{ text: SYSTEM }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseMimeType: 'application/json', maxOutputTokens: MAX_TOKENS },
   };
 }
 
 const NOT_FOUND = { found: false, confidence: 'low', box: null, note: '' };
 const round2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const BOX_SCALE = 1000; // Gemini's box_2d is [ymin, xmin, ymax, xmax] on a 0-1000 scale
 
-function percentBox(box, size) {
+function percentBox(box) {
   if (!Array.isArray(box) || box.length !== 4 || !box.every(Number.isFinite)) return null;
-  const x1 = clamp(Math.min(box[0], box[2]), 0, size.width);
-  const x2 = clamp(Math.max(box[0], box[2]), 0, size.width);
-  const y1 = clamp(Math.min(box[1], box[3]), 0, size.height);
-  const y2 = clamp(Math.max(box[1], box[3]), 0, size.height);
+  const y1 = clamp(Math.min(box[0], box[2]), 0, BOX_SCALE);
+  const y2 = clamp(Math.max(box[0], box[2]), 0, BOX_SCALE);
+  const x1 = clamp(Math.min(box[1], box[3]), 0, BOX_SCALE);
+  const x2 = clamp(Math.max(box[1], box[3]), 0, BOX_SCALE);
   if (x2 <= x1 || y2 <= y1) return null;
-  return {
-    left: round2((x1 / size.width) * 100),
-    top: round2((y1 / size.height) * 100),
-    width: round2(((x2 - x1) / size.width) * 100),
-    height: round2(((y2 - y1) / size.height) * 100),
-  };
+  const pct = (n) => round2((n / BOX_SCALE) * 100);
+  return { left: pct(x1), top: pct(y1), width: pct(x2 - x1), height: pct(y2 - y1) };
 }
 
+const DECLINED = { SAFETY: true, PROHIBITED_CONTENT: true, BLOCKLIST: true, IMAGE_SAFETY: true, SPII: true, RECITATION: true };
+
 /**
- * The Messages API answer -> { found, confidence, box (percent of the picture) | null, note }.
- * Throws when Claude did not give a usable answer, so a non-answer is never
+ * Gemini's answer -> { found, confidence, box (percent of the picture) | null, note }.
+ * Throws when Gemini did not give a usable answer, so a non-answer is never
  * shown as "your truck was not seen".
  */
-export function parseTruckCheck(apiJson, size) {
-  const stop = apiJson && apiJson.stop_reason;
-  if (stop === 'refusal') throw new Error('Claude declined to look at this picture.');
-  if (stop === 'max_tokens') throw new Error("Claude's answer was cut off.");
-  const blocks = (apiJson && Array.isArray(apiJson.content) && apiJson.content) || [];
-  const text = blocks.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
+export function parseTruckCheck(apiJson) {
+  if (apiJson && apiJson.promptFeedback && apiJson.promptFeedback.blockReason) {
+    throw new Error('Gemini declined to look at this picture.');
+  }
+  const candidate = apiJson && Array.isArray(apiJson.candidates) ? apiJson.candidates[0] : null;
+  const finish = candidate && candidate.finishReason;
+  if (DECLINED[finish]) throw new Error('Gemini declined to look at this picture.');
+  if (finish === 'MAX_TOKENS') throw new Error("Gemini's answer was cut off.");
+  const parts = (candidate && candidate.content && Array.isArray(candidate.content.parts) && candidate.content.parts) || [];
+  const text = parts.filter((p) => p && typeof p.text === 'string' && !p.thought).map((p) => p.text).join('\n');
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   let answer = null;
@@ -110,12 +112,12 @@ export function parseTruckCheck(apiJson, size) {
       answer = null;
     }
   }
-  if (!answer || typeof answer.found !== 'boolean') throw new Error("Claude's answer could not be read.");
+  if (!answer || typeof answer.found !== 'boolean') throw new Error("Gemini's answer could not be read.");
   if (!answer.found) return NOT_FOUND;
   return {
     found: true,
     confidence: CONFIDENCE[answer.confidence] ? answer.confidence : 'low',
-    box: percentBox(answer.box, size),
+    box: percentBox(answer.box_2d),
     note: typeof answer.note === 'string' ? answer.note.slice(0, 200) : '',
   };
 }
@@ -129,27 +131,50 @@ export function base64FromBytes(bytes) {
   return btoa(text);
 }
 
+/** The reason Google gives in an error answer ("API_KEY_INVALID"), or ''. */
+function errorReason(json) {
+  const details = (json && json.error && Array.isArray(json.error.details) && json.error.details) || [];
+  const info = details.find((d) => d && typeof d.reason === 'string');
+  return info ? info.reason : '';
+}
+
+function readError(bodyText) {
+  try {
+    const json = JSON.parse(bodyText);
+    return { json, message: (json && json.error && json.error.message) || '', status: (json && json.error && json.error.status) || '' };
+  } catch (err) {
+    return { json: null, message: '', status: '' };
+  }
+}
+
 /**
- * Errors that will not fix themselves at the next stop: a refused key, no
- * credit, an unknown model. Any other 400 (say, one corrupt camera frame), 413,
- * 429 and 5xx are about this picture or this moment.
+ * Errors that will not fix themselves at the next stop: a refused key, the API
+ * not switched on, an unknown model, Gemini not offered here. Any other 400
+ * (say, one corrupt camera frame), 413, 429 (the free limit) and 5xx are about
+ * this picture or this moment.
  */
 export function isPermanentApiError(status, bodyText) {
   if (status === 401 || status === 403 || status === 404) return true;
-  return status === 400 && /credit balance/i.test(bodyText || '');
+  if (status !== 400) return false;
+  const e = readError(bodyText);
+  return errorReason(e.json) === 'API_KEY_INVALID' || e.status === 'FAILED_PRECONDITION';
 }
 
-/** A short, plain reason from an Anthropic error answer. */
+/** A short, plain reason from a Gemini error answer. */
 export function apiErrorText(status, bodyText) {
-  let message = '';
-  try {
-    const json = JSON.parse(bodyText);
-    message = (json && json.error && json.error.message) || '';
-  } catch (err) {
-    message = '';
-  }
-  if (status === 401) return 'Anthropic refused the key. Check "anthropic" in keys.local.json.';
-  if (/credit balance/i.test(message)) return 'Your Anthropic account is out of credit.';
-  if (status === 429) return 'Anthropic says too many checks right now. It tries again later.';
-  return `Anthropic answered HTTP ${status}${message ? `: ${message.slice(0, 120)}` : ''}.`;
+  const e = readError(bodyText);
+  if (errorReason(e.json) === 'API_KEY_INVALID' || status === 401) return 'Google refused the key. Check "gemini" in keys.local.json.';
+  if (status === 403) return 'Google refused the key for Gemini. Make the key again in Google AI Studio.';
+  if (status === 429) return "Gemini's free limit is used up for now. It tries again later.";
+  return `Gemini answered HTTP ${status}${e.message ? `: ${e.message.slice(0, 120)}` : ''}.`;
+}
+
+/**
+ * When the camera picture was taken, from the moment it arrived and the
+ * cache's Age header (seconds). AZ511 serves each picture from a cache for 30
+ * seconds, so Age says how old it is without trusting the unit's clock.
+ */
+export function pictureTakenAt(receivedAt, ageSeconds) {
+  const age = Number(ageSeconds);
+  return Number.isFinite(age) && age > 0 ? receivedAt - age * 1000 : receivedAt;
 }

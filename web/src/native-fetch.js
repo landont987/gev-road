@@ -11,13 +11,13 @@ import { fetchWithTimeout } from './ui.js';
 const pending = {};
 let nextId = 1;
 
-/** Called by the Android app: status 0 means the request never got through. */
-function onNativeAnswer(id, status, body) {
+/** Called by the Android app: status 0 means the request never got through; ageSeconds is -1 when unknown. */
+function onNativeAnswer(id, status, body, ageSeconds) {
   const entry = pending[id];
   if (!entry) return;
   delete pending[id];
   clearTimeout(entry.timer);
-  entry.resolve(makeResponse(status, body), body);
+  entry.resolve(makeResponse(status, body, ageSeconds), body);
 }
 
 /** Why a status-0 answer never reached the server, in plain words. */
@@ -30,11 +30,12 @@ function failureText(body) {
 if (typeof window !== 'undefined') window.gevOnHttp = onNativeAnswer; // tests import this under node
 
 /** The small part of a Response the app uses. Pure, for tests. */
-export function makeResponse(status, body) {
+export function makeResponse(status, body, ageSeconds) {
   const text = typeof body === 'string' ? body : '';
   return {
     ok: status >= 200 && status < 300,
     status,
+    ageSeconds: Number.isFinite(ageSeconds) && ageSeconds >= 0 ? ageSeconds : null,
     text: () => Promise.resolve(text),
     json: () => Promise.resolve(JSON.parse(text)),
   };
@@ -92,7 +93,7 @@ export function hasNativeRequest() {
 /**
  * Like nativeFetch, with any headers, and with base64: true the body comes back
  * as base64 text (pictures); the caller decodes it. Android app only: the hosts
- * it serves (OpenAI, Anthropic, az511.com) cannot be reached from the page.
+ * it serves (OpenAI, Gemini, az511.com) cannot be reached from the page.
  * init: { method, headers: { name: value }, body, base64 }
  */
 export function nativeRequest(url, timeoutMs, init) {

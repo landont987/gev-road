@@ -25,7 +25,7 @@ export function readKeys() {
     bcfySecret: read('bcfySecret'),
     bcfyAppId: read('bcfyAppId'),
     openai: read('openai'),
-    anthropic: read('anthropic'),
+    gemini: read('gemini'),
     truckDescription: read('truckDescription'),
   };
 }
@@ -59,7 +59,8 @@ export function copyStatic() {
   }
 }
 
-// Anthropic rejects a picture over 5 MB, and the app sends it as JPEG.
+// Every check uploads this photo over the hotspot, so it should stay small (about 100 KB);
+// this limit only catches a full-size phone picture.
 const TRUCK_PHOTO_MAX_BYTES = 3 * 1024 * 1024;
 function checkTruckPhoto(file) {
   const bytes = fs.readFileSync(file);

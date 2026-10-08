@@ -70,11 +70,11 @@ export const LOW_DATA_MAX_ZOOM = 15;
 export const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
 export const OPENAI_TTS_MODEL = 'gpt-4o-mini-tts';
 
-// AI truck check: Claude looks at a camera picture for your truck while you are
-// stopped near it. Key in keys.local.json ("anthropic"). About 1 to 2 cents a check.
-export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-export const ANTHROPIC_VERSION = '2023-06-01';
-export const TRUCK_CHECK_MODEL = 'claude-opus-5-5';
+// AI truck check: Gemini looks at a camera picture for your truck while you are
+// stopped near it. Free key from Google AI Studio in keys.local.json ("gemini").
+// Flash-Lite is Google's fastest model; its free tier costs nothing.
+export const TRUCK_CHECK_MODEL = 'gemini-3.5-flash-lite';
+export const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TRUCK_CHECK_MODEL}:generateContent`;
 
 // Speed and red-light cameras mapped in OpenStreetMap, all of Arizona in one
 // small answer (about 6 KB, 27 cameras on 2026-10-07), fetched once a day.

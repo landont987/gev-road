@@ -1,10 +1,13 @@
-// AI truck check: when the truck has sat still near an ADOT camera, Claude
-// looks at that camera's picture for the driver's own truck, once per stop.
+// AI truck check: a few seconds after the truck stops near an ADOT camera,
+// Gemini looks at that camera's picture for the driver's own truck. The
+// picture may be from before the truck got there (the camera posts a new one
+// every 30 seconds), so when Gemini does not see it, the app fetches the
+// camera's next picture the moment it appears and asks once more.
 // A match pings by voice and shows the picture with the truck boxed.
-// Each check downloads one picture and sends it to Anthropic: about half a MB
-// of hotspot and 1 to 2 cents. Never in low data mode.
+// Each check downloads one picture and sends it to Google: about a third of a
+// MB of hotspot; free on Gemini's free tier. Never in low data mode.
 
-import { KEYS, ANTHROPIC_URL, ANTHROPIC_VERSION, TRUCK_CHECK_MODEL, MOVING_SPEED_MPS } from './config.js';
+import { KEYS, GEMINI_URL, MOVING_SPEED_MPS } from './config.js';
 import { distanceM } from './geo.js';
 import { spokenPlace } from './alert-logic.js';
 import { nativeRequest, hasNativeRequest } from './native-fetch.js';
@@ -17,14 +20,19 @@ import {
   parseTruckCheck,
   apiErrorText,
   isPermanentApiError,
+  pictureTakenAt,
 } from './truck-check-logic.js';
 import { el, openSheet, openSheetKind, toast, fetchWithTimeout } from './ui.js';
 
 const STOPPED_MPS = 0.5;
-const STOP_SETTLE_MS = 10000; // a stop this long, not a rolling slowdown
+const STOP_SETTLE_MS = 3000; // a stop this long, not a rolling slowdown
 const CHECK_RADIUS_M = 300;
 const PICTURE_TIMEOUT_MS = 20000;
-const AI_TIMEOUT_MS = 60000;
+const AI_TIMEOUT_MS = 30000;
+const CAMERA_REFRESH_MS = 30000; // AZ511 serves each camera picture for 30 seconds
+const NEXT_PICTURE_MARGIN_MS = 1500; // ask just after the next picture should be up
+const WATCH_POLL_MS = 5000; // when the new picture is late
+const WATCH_MAX_MS = 45000; // give up on a newer picture after this long
 const HEADER_CHARS = 8192; // base64 characters decoded to read the picture size
 const REFERENCE_URL = 'truck.jpg'; // the driver's photo, bundled from truck.local.jpg
 const CAMERA_COOLDOWN_MS = 15 * 60 * 1000; // stop-and-go by one camera checks it once
@@ -42,6 +50,7 @@ export function createTruckCheck(deps) {
   let retryNotBefore = 0; // the one retry waits a minute, even if another camera is in range
   let running = false;
   let last = null; // { cam, at, result?, picture?, offline?, error? }
+  let watch = null; // { cam, base64, arrivedAt, nextAt, until }: waiting for the camera's next picture
   let reference; // undefined: not loaded yet; null: no photo bundled
   let stoppedReason = ''; // a permanent error turns the check off until the switch is flipped
   const checkedAt = {}; // camera id -> when it was last checked automatically
@@ -50,7 +59,7 @@ export function createTruckCheck(deps) {
   function blocker() {
     if (!settings.truckCheck) return 'The AI truck check is off.';
     if (stoppedReason) return `Stopped: ${stoppedReason} Switch AI TRUCK CHECK off and on to try again.`;
-    if (!KEYS.anthropic) return 'The AI truck check needs your Anthropic key.';
+    if (!KEYS.gemini) return 'The AI truck check needs your free Gemini key.';
     if (!hasNativeRequest()) return 'The AI truck check runs in the Android app only.';
     if (app.isLowData()) return 'Low data is on, so the AI truck check is off.';
     if (!app.isOnline()) return 'No internet right now.';
@@ -93,25 +102,26 @@ export function createTruckCheck(deps) {
     return nativeRequest(cam.imageUrl, PICTURE_TIMEOUT_MS, { method: 'GET', headers: { Accept: 'image/*' }, base64: true })
       .then((res) => {
         if (!res.ok) throw new Error(`The camera picture did not load (HTTP ${res.status}).`);
-        return res.text();
+        // No Age header: the cache just fetched it from the camera, so it is new.
+        const takenAt = pictureTakenAt(Date.now(), res.ageSeconds);
+        return res.text().then((base64) => ({ base64, takenAt }));
       })
-      .then((base64) => {
+      .then(({ base64, takenAt }) => {
         const size = imageSize(bytesFromBase64(base64.slice(0, HEADER_CHARS)));
         if (!size) throw new Error('The camera sent something that is not a picture.');
-        return { base64, mediaType: size.type === 'png' ? 'image/png' : 'image/jpeg', size };
+        return { base64, mediaType: size.type === 'png' ? 'image/png' : 'image/jpeg', size, takenAt };
       });
   }
 
-  function askClaude(picture, ref) {
+  function askGemini(picture, ref) {
     const body = truckCheckBody({
-      model: TRUCK_CHECK_MODEL,
-      camera: { base64: picture.base64, mediaType: picture.mediaType, width: picture.size.width, height: picture.size.height },
+      camera: { base64: picture.base64, mediaType: picture.mediaType },
       reference: ref,
       description: KEYS.truckDescription,
     });
-    return nativeRequest(ANTHROPIC_URL, AI_TIMEOUT_MS, {
+    return nativeRequest(GEMINI_URL, AI_TIMEOUT_MS, {
       method: 'POST',
-      headers: { 'x-api-key': KEYS.anthropic, 'anthropic-version': ANTHROPIC_VERSION, 'Content-Type': 'application/json' },
+      headers: { 'x-goog-api-key': KEYS.gemini, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
       .then((res) => res.text().then((text) => ({ res, text })))
@@ -125,9 +135,9 @@ export function createTruckCheck(deps) {
         try {
           json = JSON.parse(text);
         } catch (e) {
-          throw new Error("Claude's answer could not be read.");
+          throw new Error("Gemini's answer could not be read.");
         }
-        return parseTruckCheck(json, picture.size);
+        return parseTruckCheck(json);
       });
   }
 
@@ -137,23 +147,65 @@ export function createTruckCheck(deps) {
     toast(`AI truck check: ${err.message}`, 8000);
   }
 
-  function run(cam, manual) {
+  /** After a "not seen" on a picture from before the stop: wait for the camera's next one. */
+  function watchForNewer(cam, picture, arrivedAt) {
+    if (picture.takenAt >= arrivedAt) return; // this picture already shows the stop
+    const nextAt = picture.takenAt + CAMERA_REFRESH_MS + NEXT_PICTURE_MARGIN_MS;
+    watch = { cam, base64: picture.base64, arrivedAt, nextAt, until: Date.now() + WATCH_MAX_MS };
+  }
+
+  /** One look at the camera's picture while watching; a new one goes to Gemini. */
+  function checkForNewer() {
+    const w = watch;
+    if (Date.now() > w.until) {
+      watch = null;
+      return;
+    }
     running = true;
+    fetchPicture(w.cam)
+      .then((picture) => {
+        if (watch !== w) return false; // the truck drove off while the picture loaded
+        if (picture.base64 === w.base64 || picture.takenAt < w.arrivedAt) {
+          w.nextAt = Date.now() + WATCH_POLL_MS;
+          return false;
+        }
+        watch = null;
+        run(w.cam, false, picture);
+        return true;
+      })
+      .catch((err) => {
+        console.warn(`truck check: the next picture did not load: ${err.message}`);
+        w.nextAt = Date.now() + WATCH_POLL_MS;
+        return false;
+      })
+      .then((started) => {
+        if (!started) running = false;
+      });
+  }
+
+  /** picture: one already fetched (the camera's newer picture), else it is fetched now. */
+  function run(cam, manual, picture) {
+    running = true;
+    if (manual) watch = null; // a manual check already looks at the newest picture
     checkedAt[cam.id] = Date.now(); // a manual check also counts, so no automatic one follows it
+    const arrivedAt = stoppedSince;
     const done = () => {
       running = false;
       if (manual) toast(lastText(), 8000);
     };
-    Promise.all([loadReference(), fetchPicture(cam)])
-      .then(([ref, picture]) => {
-        if (isOfflineCard(picture.size)) return { cam, offline: true };
-        return askClaude(picture, ref).then((result) => ({ cam, picture, result }));
+    Promise.all([loadReference(), picture ? Promise.resolve(picture) : fetchPicture(cam)])
+      .then(([ref, pic]) => {
+        if (isOfflineCard(pic.size)) return { cam, offline: true };
+        return askGemini(pic, ref).then((result) => ({ cam, picture: pic, result }));
       })
       .then((outcome) => {
         last = Object.assign({ at: Date.now() }, outcome);
-        if (outcome.result && outcome.result.found && outcome.result.confidence !== 'low') {
+        const r = outcome.result;
+        if (r && r.found && r.confidence !== 'low') {
           voice.sayIfOn(`Heads up. Your truck may be on the ${spokenPlace(cam.name)} camera.`);
           showLast();
+        } else if (r && !manual && !picture && arrivedAt !== null && stoppedSince === arrivedAt) {
+          watchForNewer(cam, outcome.picture, arrivedAt);
         }
       })
       .catch((err) => {
@@ -199,12 +251,12 @@ export function createTruckCheck(deps) {
     renderPicture(box);
     if (last && last.result && last.result.note) body.appendChild(el('p', { class: 'kv' }, el('b', {}, 'AI'), last.result.note));
     body.appendChild(
-      el('p', { class: 'credits' }, 'AI guess by Claude (Anthropic). Trucks can look alike. Camera: ADOT / AZ511, a still picture.'),
+      el('p', { class: 'credits' }, 'AI guess by Gemini (Google). Trucks can look alike. Camera: ADOT / AZ511, a still picture.'),
     );
   }
 
   function lastText() {
-    if (!last) return 'No check yet. It runs when you stop within 300 m of an ADOT camera.';
+    if (!last) return 'No check yet. It runs a few seconds after you stop within 300 m of an ADOT camera.';
     const time = new Date(last.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     const where = `${last.cam.name}, ${time}`;
     if (last.error) return `${where}: ${last.error}`;
@@ -223,6 +275,7 @@ export function createTruckCheck(deps) {
         checkedThisStop = false;
         retriesThisStop = 0;
         retryNotBefore = 0;
+        watch = null;
         return;
       }
       if (fix.speed >= STOPPED_MPS) {
@@ -230,6 +283,11 @@ export function createTruckCheck(deps) {
         return;
       }
       if (stoppedSince === null) stoppedSince = Date.now();
+      if (watch && !running && Date.now() >= watch.nextAt) {
+        if (blocker()) watch = null;
+        else checkForNewer();
+        return;
+      }
       if (checkedThisStop || running || Date.now() - stoppedSince < STOP_SETTLE_MS) return;
       if (Date.now() < retryNotBefore || blocker()) return;
       const cam = nearestCamera(fix, false);

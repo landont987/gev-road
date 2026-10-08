@@ -12,6 +12,7 @@ import {
   base64FromBytes,
   apiErrorText,
   isPermanentApiError,
+  pictureTakenAt,
 } from '../web/src/truck-check-logic.js';
 
 const fixture = (name) => new Uint8Array(fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));
@@ -56,84 +57,95 @@ test('bytesFromBase64 round-trips binary', () => {
   assert.deepEqual(Array.from(bytesFromBase64('AP+AAQ==')), [0, 255, 128, 1]);
 });
 
-test('truckCheckBody sends the truck photo first, then the camera picture, and asks for JSON only', () => {
+test('truckCheckBody sends the truck photo first, then the camera picture, and asks Gemini for JSON only', () => {
   const body = truckCheckBody({
-    model: 'claude-opus-5-5',
-    camera: { base64: 'CAM', mediaType: 'image/jpeg', width: 1280, height: 720 },
+    camera: { base64: 'CAM', mediaType: 'image/jpeg' },
     reference: { base64: 'REF', mediaType: 'image/jpeg' },
     description: 'white 2019 Ford F-150 crew cab',
   });
-  assert.equal(body.model, 'claude-opus-5-5');
-  assert.ok(body.max_tokens > 0 && body.max_tokens <= 500);
-  const content = body.messages[0].content;
-  const kinds = content.map((c) => (c.type === 'image' ? `image:${c.source.data}` : 'text'));
-  assert.deepEqual(kinds, ['text', 'image:REF', 'text', 'image:CAM', 'text']);
-  const ask = content[4].text;
+  assert.equal(body.generationConfig.responseMimeType, 'application/json');
+  assert.ok(body.generationConfig.maxOutputTokens >= 1024, 'room for short thinking plus the answer');
+  const parts = body.contents[0].parts;
+  assert.equal(body.contents[0].role, 'user');
+  const kinds = parts.map((p) => (p.inline_data ? `image:${p.inline_data.data}:${p.inline_data.mime_type}` : 'text'));
+  assert.deepEqual(kinds, ['text', 'image:REF:image/jpeg', 'text', 'image:CAM:image/jpeg', 'text']);
+  const ask = parts[4].text;
   assert.match(ask, /white 2019 Ford F-150 crew cab/);
-  assert.match(content[2].text, /^Image 2: the traffic camera picture, 1280 x 720 pixels\.$/);
+  assert.match(parts[2].text, /^Image 2: the traffic camera picture\.$/);
+  assert.match(ask, /box_2d/);
+  assert.match(ask, /0-1000/);
   assert.match(ask, /license plates/);
-  assert.match(body.system, /JSON only/);
+  assert.match(body.system_instruction.parts[0].text, /JSON only/);
 });
 
 test('truckCheckBody works with no truck photo', () => {
   const body = truckCheckBody({
-    model: 'm',
-    camera: { base64: 'CAM', mediaType: 'image/jpeg', width: 1920, height: 1080 },
+    camera: { base64: 'CAM', mediaType: 'image/png' },
     reference: null,
     description: 'black Ram 1500',
   });
-  assert.deepEqual(body.messages[0].content.map((c) => c.type), ['text', 'image', 'text']);
+  const parts = body.contents[0].parts;
+  assert.deepEqual(parts.map((p) => (p.inline_data ? 'image' : 'text')), ['text', 'image', 'text']);
+  assert.match(parts[0].text, /^Image 1: the traffic camera picture/);
 });
 
-const answer = (text) => ({ content: [{ type: 'text', text }], stop_reason: 'end_turn' });
+const answer = (text, finishReason = 'STOP') => ({
+  candidates: [{ content: { role: 'model', parts: [{ text }] }, finishReason }],
+});
 
-test('parseTruckCheck turns the model answer into a box in percent of the picture', () => {
-  const r = parseTruckCheck(
-    answer('{"found": true, "confidence": "high", "box": [640, 360, 960, 540], "note": "Right lanes, heading away."}'),
-    { width: 1280, height: 720 },
-  );
+test('parseTruckCheck turns Gemini\'s 0-1000 [ymin, xmin, ymax, xmax] box into percent of the picture', () => {
+  const r = parseTruckCheck(answer('{"found": true, "confidence": "high", "box_2d": [500, 500, 750, 750], "note": "Right lanes, heading away."}'));
   assert.deepEqual(r, {
     found: true,
     confidence: 'high',
     box: { left: 50, top: 50, width: 25, height: 25 },
     note: 'Right lanes, heading away.',
   });
+  const wide = parseTruckCheck(answer('{"found": true, "confidence": "medium", "box_2d": [100, 200, 300, 600], "note": ""}'));
+  assert.deepEqual(wide.box, { left: 20, top: 10, width: 40, height: 20 }, 'y first, then x');
 });
 
-test('parseTruckCheck finds the JSON inside extra words and clamps a box off the edge', () => {
-  const r = parseTruckCheck(
-    answer('Here you go:\n```json\n{"found": true, "confidence": "medium", "box": [1200, 700, 1400, 800], "note": "x"}\n```'),
-    { width: 1280, height: 720 },
-  );
+test('parseTruckCheck finds the JSON inside extra words, skips thinking, and clamps a box off the edge', () => {
+  const r = parseTruckCheck({
+    candidates: [
+      {
+        content: {
+          parts: [
+            { text: '{"found": false}', thought: true },
+            { text: 'Here you go:\n```json\n{"found": true, "confidence": "medium", "box_2d": [900, 950, 1100, 1200], "note": "x"}\n```' },
+          ],
+        },
+        finishReason: 'STOP',
+      },
+    ],
+  });
   assert.equal(r.found, true);
-  assert.deepEqual(r.box, { left: 93.75, top: 97.22, width: 6.25, height: 2.78 });
+  assert.deepEqual(r.box, { left: 95, top: 90, width: 5, height: 10 });
 });
 
 test('parseTruckCheck reads a clear "not found" and a low-confidence match', () => {
-  const size = { width: 1280, height: 720 };
-  assert.deepEqual(parseTruckCheck(answer('{"found": false, "confidence": "high", "box": null, "note": "No pickups."}'), size), {
+  assert.deepEqual(parseTruckCheck(answer('{"found": false, "confidence": "high", "box_2d": null, "note": "No pickups."}')), {
     found: false,
     confidence: 'low',
     box: null,
     note: '',
   });
-  const noBox = parseTruckCheck(answer('{"found": true, "confidence": "low", "box": null, "note": "maybe"}'), size);
+  const noBox = parseTruckCheck(answer('{"found": true, "confidence": "low", "box_2d": null, "note": "maybe"}'));
   assert.deepEqual(noBox, { found: true, confidence: 'low', box: null, note: 'maybe' });
-  assert.equal(parseTruckCheck(answer('{"found": true, "confidence": "sure", "box": [1,2]}'), size).confidence, 'low');
+  assert.equal(parseTruckCheck(answer('{"found": true, "confidence": "sure", "box_2d": [1,2]}')).confidence, 'low');
+  assert.equal(parseTruckCheck(answer('{"found": true, "confidence": "high", "box_2d": [5, 5, 5, 9]}')).box, null, 'a flat box');
 });
 
-test('parseTruckCheck throws when the AI did not really answer, so it is never shown as "not seen"', () => {
-  const size = { width: 1280, height: 720 };
-  assert.throws(() => parseTruckCheck(answer('I am not sure.'), size), /could not be read/);
-  assert.throws(() => parseTruckCheck(answer('{"found": "yes"}'), size), /could not be read/);
-  assert.throws(() => parseTruckCheck(answer('{"found": tru'), size), /could not be read/);
-  assert.throws(() => parseTruckCheck({ content: [] }, size), /could not be read/);
-  assert.throws(() => parseTruckCheck(null, size), /could not be read/);
-  assert.throws(
-    () => parseTruckCheck({ content: [{ type: 'text', text: '{"found": false, "note": "cut' }], stop_reason: 'max_tokens' }, size),
-    /cut off/,
-  );
-  assert.throws(() => parseTruckCheck({ content: [], stop_reason: 'refusal' }, size), /declined/);
+test('parseTruckCheck throws when Gemini did not really answer, so it is never shown as "not seen"', () => {
+  assert.throws(() => parseTruckCheck(answer('I am not sure.')), /could not be read/);
+  assert.throws(() => parseTruckCheck(answer('{"found": "yes"}')), /could not be read/);
+  assert.throws(() => parseTruckCheck(answer('{"found": tru')), /could not be read/);
+  assert.throws(() => parseTruckCheck({ candidates: [] }), /could not be read/);
+  assert.throws(() => parseTruckCheck({ candidates: [{ content: { parts: [{ text: '{"found": false}', thought: true }] } }] }), /could not be read/);
+  assert.throws(() => parseTruckCheck(null), /could not be read/);
+  assert.throws(() => parseTruckCheck(answer('{"found": false, "note": "cut', 'MAX_TOKENS')), /cut off/);
+  assert.throws(() => parseTruckCheck({ candidates: [{ finishReason: 'SAFETY' }] }), /declined/);
+  assert.throws(() => parseTruckCheck({ promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } }), /declined/);
 });
 
 test('base64FromBytes matches Node and survives more than one chunk', () => {
@@ -141,21 +153,31 @@ test('base64FromBytes matches Node and survives more than one chunk', () => {
   assert.equal(base64FromBytes(bytes), Buffer.from(bytes).toString('base64'));
 });
 
-test('apiErrorText explains the usual Anthropic failures plainly', () => {
-  assert.match(apiErrorText(401, '{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'), /refused the key/);
-  assert.match(
-    apiErrorText(400, '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}'),
-    /out of credit/,
-  );
-  assert.match(apiErrorText(429, ''), /too many checks/);
-  assert.equal(apiErrorText(500, 'not json'), 'Anthropic answered HTTP 500.');
+// The real answer Gemini gave a made-up key on 2026-10-07.
+const BAD_KEY =
+  '{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"API_KEY_INVALID","domain":"googleapis.com"}]}}';
+
+test('apiErrorText explains the usual Gemini failures plainly', () => {
+  assert.match(apiErrorText(400, BAD_KEY), /Google refused the key\. Check "gemini"/);
+  assert.match(apiErrorText(403, '{"error":{"code":403,"status":"PERMISSION_DENIED","message":"denied"}}'), /AI Studio/);
+  assert.match(apiErrorText(429, '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"quota"}}'), /free limit is used up/);
+  assert.equal(apiErrorText(500, 'not json'), 'Gemini answered HTTP 500.');
+  assert.equal(apiErrorText(400, '{"error":{"code":400,"message":"Unable to process input image.","status":"INVALID_ARGUMENT"}}'), 'Gemini answered HTTP 400: Unable to process input image..');
 });
 
 test('isPermanentApiError stops retries only for errors a retry cannot fix', () => {
   for (const s of [401, 403, 404]) assert.equal(isPermanentApiError(s, ''), true, String(s));
-  const noCredit = '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}';
-  assert.equal(isPermanentApiError(400, noCredit), true, 'out of credit');
-  const badImage = '{"type":"error","error":{"type":"invalid_request_error","message":"Could not process image"}}';
+  assert.equal(isPermanentApiError(400, BAD_KEY), true, 'a made-up key');
+  const notHere = '{"error":{"code":400,"message":"User location is not supported for the API use.","status":"FAILED_PRECONDITION"}}';
+  assert.equal(isPermanentApiError(400, notHere), true, 'Gemini not offered here');
+  const badImage = '{"error":{"code":400,"message":"Unable to process input image.","status":"INVALID_ARGUMENT"}}';
   assert.equal(isPermanentApiError(400, badImage), false, 'one bad camera frame');
-  for (const s of [413, 429, 500, 502, 529]) assert.equal(isPermanentApiError(s, ''), false, String(s));
+  for (const s of [413, 429, 500, 502, 503]) assert.equal(isPermanentApiError(s, ''), false, String(s));
+});
+
+test('pictureTakenAt reads the cache Age header and treats a missing one as just taken', () => {
+  assert.equal(pictureTakenAt(100000, 25), 75000);
+  assert.equal(pictureTakenAt(100000, null), 100000);
+  assert.equal(pictureTakenAt(100000, 0), 100000);
+  assert.equal(pictureTakenAt(100000, 'x'), 100000);
 });

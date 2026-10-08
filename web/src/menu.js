@@ -69,7 +69,7 @@ export function openMenu(app) {
       'Map: OpenStreetMap contributors. Cameras: ADOT / AZ511 via AZGeo. ' +
         'Plate readers: OpenStreetMap volunteers via DeFlock. Directions: OSRM (FOSSGIS). ' +
         'Search: Photon (komoot). Traffic: TomTom. Speed and red-light cameras: OpenStreetMap contributors. ' +
-        'AI voice: OpenAI (AI-generated, not a human). AI truck check: Claude by Anthropic. Built from the data sources of ' +
+        'AI voice: OpenAI (AI-generated, not a human). AI truck check: Gemini by Google. Built from the data sources of ' +
         "God's Eye View by Bilawal Sidhu (MIT license).",
     ),
   );
