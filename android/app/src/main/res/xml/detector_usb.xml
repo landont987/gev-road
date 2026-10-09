@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The plate-reader detector: Espressif's USB vendor id (0x303A), as on the XIAO ESP32-S3. -->
+<!-- The plate-reader detector, a Seeed XIAO ESP32-S3: Espressif's USB vendor id (0x303A,
+     its built-in USB serial) or Seeed's (0x2886, when flashed in TinyUSB mode). -->
 <resources>
     <usb-device vendor-id="12346" />
+    <usb-device vendor-id="10374" />
 </resources>

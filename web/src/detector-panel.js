@@ -4,7 +4,7 @@ import { el, openSheet, setOn, toast } from './ui.js';
 
 /** ctx: { detector, settings, save(), isMoving() } */
 export function openDetectorPanel(ctx) {
-  const { detector, settings, save } = ctx;
+  const { detector, settings } = ctx;
   const body = openSheet('detector', 'Plate-reader detector');
   body.appendChild(
     el(

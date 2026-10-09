@@ -16,6 +16,7 @@ import android.hardware.usb.UsbManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Parcelable;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -31,7 +32,8 @@ import java.util.List;
  * on a Seeed XIAO ESP32-S3, plugged into the head unit's USB. The board listens
  * for Flock cameras' radio signals by itself and prints one JSON line per hit over
  * its built-in USB serial port (CDC-ACM). This class only reads those lines and
- * hands them to the page; it never sends the board a command.
+ * hands them to the page. It sends the board nothing but the two standard
+ * serial-port setup requests (line coding, DTR/RTS): never data or a command.
  *
  * USB permission: the driver taps CONNECT while parked and Android asks. With
  * "open GEV Road when the detector is plugged in" on (an activity alias that is
@@ -48,15 +50,21 @@ final class Detector {
     }
 
     private static final String TAG = "GevDetector";
-    static final int ESPRESSIF_VENDOR_ID = 0x303A;
+    // The XIAO ESP32-S3's built-in USB serial reports Espressif's id; flashed in TinyUSB mode it reports Seeed's.
+    private static final int ESPRESSIF_VENDOR_ID = 0x303A;
+    private static final int SEEED_VENDOR_ID = 0x2886;
     private static final String ACTION_PERMISSION = "com.landon.gevroad.DETECTOR_PERMISSION";
     private static final String AUTO_OPEN_ALIAS = "com.landon.gevroad.DetectorPlugged";
     private static final int MAX_LINE_BYTES = 2048; // the board's lines are about 300 bytes
-    private static final int READ_BUFFER_BYTES = 4096;
+    private static final int FULL_SPEED_PACKET_BYTES = 64; // if the endpoint does not say
+    private static final long CLAIM_RETRY_MS = 600; // a screen being rebuilt may still hold the board
     private static final int READ_TIMEOUT_MS = 500;
     private static final int CONTROL_TIMEOUT_MS = 1000;
     private static final long QUICK_FAIL_MS = 50; // a read failing this fast did not wait for data
     private static final int MAX_QUICK_FAILS = 20; // in a row: the board is gone
+    // The real board sends about one line per camera every 5 seconds; more than
+    // this is a wrong or broken device, and the extra lines are dropped.
+    private static final int MAX_LINES_PER_SECOND = 20;
     // CDC-ACM class requests (USB CDC PSTN spec).
     private static final int REQUEST_TYPE_CLASS_OUT = 0x21;
     private static final int SET_LINE_CODING = 0x20;
@@ -82,24 +90,36 @@ final class Detector {
     private volatile String state = NONE;
     private volatile String problem = "";
     private volatile int lineCount;
+    // Line budget for the current second (deliver() can run on the reading or main thread).
+    private long budgetSecond;
+    private int budgetUsed;
 
     private final BroadcastReceiver usbEvents = new BroadcastReceiver() {
         @Override
         public void onReceive(Context c, Intent intent) {
-            UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-            if (device == null || device.getVendorId() != ESPRESSIF_VENDOR_ID) return;
             String action = intent.getAction();
             if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
-                if (reader != null && reader.device.getDeviceName().equals(device.getDeviceName())) {
+                // Only Android sends this one; the device is already gone from the list.
+                UsbDevice gone = deviceExtra(intent);
+                if (!isBoard(gone)) return;
+                if (reader != null && reader.device.getDeviceName().equals(gone.getDeviceName())) {
                     reader.finish();
                     reader = null;
                 }
-                setState(NONE, "");
-            } else if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
+                if (reader != null) return; // still reading another board
+                UsbDevice other = findBoard();
+                if (other != null) useBoard(other);
+                else setState(NONE, "");
+                return;
+            }
+            // Any app can send the permission broadcast on Android 9: use only a device
+            // Android lists as plugged in, and ask Android whether it is allowed.
+            UsbDevice device = attachedDevice(intent);
+            if (!isUsableBoard(device) || reader != null) return; // one board at a time
+            if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
                 useBoard(device);
             } else if (ACTION_PERMISSION.equals(action)) {
-                // Any app can send this broadcast on Android 9, so Android itself is asked.
-                if (usb.hasPermission(device)) open(device);
+                if (usb.hasPermission(device)) open(device, false);
                 else setState(NEEDS_PERMISSION, "Permission was not given. Park and tap CONNECT to ask again.");
             }
         }
@@ -145,7 +165,7 @@ final class Detector {
             return;
         }
         if (usb.hasPermission(board)) {
-            open(board);
+            open(board, false);
             return;
         }
         Intent answer = new Intent(ACTION_PERMISSION).setPackage(context.getPackageName());
@@ -156,9 +176,9 @@ final class Detector {
 
     /** The app was opened because the board was plugged in (the alias is on). */
     void onLaunchIntent(Intent intent) {
-        if (intent == null || !UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(intent.getAction())) return;
-        UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-        if (device != null && device.getVendorId() == ESPRESSIF_VENDOR_ID) useBoard(device);
+        if (intent == null || usb == null || !UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(intent.getAction())) return;
+        UsbDevice device = attachedDevice(intent); // MainActivity is exported: the intent may not be Android's
+        if (isUsableBoard(device) && reader == null) useBoard(device);
     }
 
     boolean autoOpen() {
@@ -196,17 +216,42 @@ final class Detector {
     }
 
     private void useBoard(UsbDevice device) {
-        if (usb.hasPermission(device)) open(device);
+        if (usb.hasPermission(device)) open(device, false);
         else setState(NEEDS_PERMISSION, "");
     }
 
     private UsbDevice findBoard() {
         for (UsbDevice device : usb.getDeviceList().values()) {
-            if (device.getVendorId() == ESPRESSIF_VENDOR_ID && findInterface(device, UsbConstants.USB_CLASS_CDC_DATA) != null) {
-                return device;
-            }
+            if (isUsableBoard(device)) return device;
         }
         return null;
+    }
+
+    /** An ESP32-S3 board with a serial port to read (other Espressif gadgets have none). */
+    private static boolean isUsableBoard(UsbDevice device) {
+        return isBoard(device) && findInterface(device, UsbConstants.USB_CLASS_CDC_DATA) != null;
+    }
+
+    /** The intent's device, or null when the extra is missing or not a UsbDevice (another app can send anything). */
+    private static UsbDevice deviceExtra(Intent intent) {
+        try {
+            Parcelable extra = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+            return extra instanceof UsbDevice ? (UsbDevice) extra : null;
+        } catch (RuntimeException e) {
+            return null; // a broken parcel
+        }
+    }
+
+    /** The plugged-in device the intent names, as Android lists it; never the intent's own object. */
+    private UsbDevice attachedDevice(Intent intent) {
+        UsbDevice named = deviceExtra(intent);
+        return named == null ? null : usb.getDeviceList().get(named.getDeviceName());
+    }
+
+    private static boolean isBoard(UsbDevice device) {
+        if (device == null) return false;
+        int vendor = device.getVendorId();
+        return vendor == ESPRESSIF_VENDOR_ID || vendor == SEEED_VENDOR_ID;
     }
 
     private static UsbInterface findInterface(UsbDevice device, int interfaceClass) {
@@ -226,47 +271,43 @@ final class Detector {
         return null;
     }
 
-    private void open(UsbDevice device) {
+    /** Start reading a board Android allows. retried: this is the one retry after a failed claim. */
+    private void open(UsbDevice device, boolean retried) {
         if (reader != null) {
-            if (reader.device.getDeviceName().equals(device.getDeviceName())) return; // already reading it
-            reader.finish();
-            reader = null;
+            // One board at a time: tapping CONNECT again only refreshes the status.
+            if (reader.device.getDeviceName().equals(device.getDeviceName())) setState(LISTENING, "");
+            return;
         }
         UsbInterface data = findInterface(device, UsbConstants.USB_CLASS_CDC_DATA);
         if (data == null) {
             setState(FAILED, "This USB device is not a serial board.");
             return;
         }
-        UsbDeviceConnection connection;
-        try {
-            connection = usb.openDevice(device);
-        } catch (SecurityException e) {
+        if (!usb.hasPermission(device)) {
             setState(NEEDS_PERMISSION, "");
             return;
         }
+        UsbDeviceConnection connection = usb.openDevice(device);
         if (connection == null) {
             setState(FAILED, "Android would not open the detector. Unplug it and plug it back in.");
             return;
         }
         if (!connection.claimInterface(data, true)) {
             connection.close();
+            if (!retried) {
+                // After a screen rebuild the old reading thread lets go within half a second.
+                main.postDelayed(() -> {
+                    if (started && reader == null && isUsableBoard(usb.getDeviceList().get(device.getDeviceName()))) {
+                        open(device, true);
+                    }
+                }, CLAIM_RETRY_MS);
+                return;
+            }
             setState(FAILED, "Another app is using the detector.");
             return;
         }
         UsbInterface comm = findInterface(device, UsbConstants.USB_CLASS_COMM);
-        if (comm != null && connection.claimInterface(comm, true)) {
-            int index = comm.getId();
-            if (connection.controlTransfer(REQUEST_TYPE_CLASS_OUT, SET_LINE_CODING, 0, index,
-                    LINE_CODING_115200_8N1, LINE_CODING_115200_8N1.length, CONTROL_TIMEOUT_MS) < 0) {
-                Log.w(TAG, "the board did not take the line coding");
-            }
-            if (connection.controlTransfer(REQUEST_TYPE_CLASS_OUT, SET_CONTROL_LINE_STATE, DTR_AND_RTS, index,
-                    null, 0, CONTROL_TIMEOUT_MS) < 0) {
-                Log.w(TAG, "the board did not take DTR");
-            }
-        } else {
-            comm = null;
-        }
+        if (comm != null && !connection.claimInterface(comm, true)) comm = null;
         reader = new Reader(device, connection, data, comm, bulkIn(data));
         reader.start();
         setState(LISTENING, "");
@@ -285,7 +326,7 @@ final class Detector {
     private void deliver(List<String> lines) {
         final List<String> json = new ArrayList<>();
         for (String line : lines) {
-            if (line.startsWith("{")) json.add(line);
+            if (line.startsWith("{") && takeBudget()) json.add(line);
         }
         if (json.isEmpty()) return;
         main.post(() -> {
@@ -294,6 +335,16 @@ final class Detector {
                 listener.onLine(line);
             }
         });
+    }
+
+    /** One line's share of MAX_LINES_PER_SECOND; false when this second's budget is spent. */
+    private synchronized boolean takeBudget() {
+        long second = SystemClock.uptimeMillis() / 1000;
+        if (second != budgetSecond) {
+            budgetSecond = second;
+            budgetUsed = 0;
+        }
+        return ++budgetUsed <= MAX_LINES_PER_SECOND;
     }
 
     private void setState(String newState, String newProblem) {
@@ -324,12 +375,30 @@ final class Detector {
             running = false;
         }
 
+        /** The two serial-port setup requests, here so a slow board never holds up the screen. */
+        private void setUpPort() {
+            if (comm == null) return;
+            int index = comm.getId();
+            if (connection.controlTransfer(REQUEST_TYPE_CLASS_OUT, SET_LINE_CODING, 0, index,
+                    LINE_CODING_115200_8N1, LINE_CODING_115200_8N1.length, CONTROL_TIMEOUT_MS) < 0) {
+                Log.w(TAG, "the board did not take the line coding");
+            }
+            if (connection.controlTransfer(REQUEST_TYPE_CLASS_OUT, SET_CONTROL_LINE_STATE, DTR_AND_RTS, index,
+                    null, 0, CONTROL_TIMEOUT_MS) < 0) {
+                Log.w(TAG, "the board did not take DTR");
+            }
+        }
+
         @Override
         public void run() {
             LineFramer framer = new LineFramer(MAX_LINE_BYTES);
-            byte[] buffer = new byte[READ_BUFFER_BYTES];
+            // One USB packet per read: a read that asks for more waits for a short packet to
+            // end the transfer, and a burst that fills whole packets may never send one.
+            int packet = in.getMaxPacketSize();
+            byte[] buffer = new byte[packet > 0 ? packet : FULL_SPEED_PACKET_BYTES];
             int quickFails = 0;
             try {
+                setUpPort();
                 while (running) {
                     long before = SystemClock.uptimeMillis();
                     int count = connection.bulkTransfer(in, buffer, buffer.length, READ_TIMEOUT_MS);

@@ -29,6 +29,8 @@ import { createTruckCheck } from './truck-check.js';
 import { openVoicePanel } from './voice-panel.js';
 import { createDetector } from './detector.js';
 import { openDetectorPanel } from './detector-panel.js';
+import { createEngine } from './engine.js';
+import { openEnginePanel } from './engine-panel.js';
 
 const settings = loadSettings();
 const MPS_TO_MPH = 2.23694;
@@ -87,6 +89,7 @@ radio.onChange((playingId) => setOn($('btn-radio'), !!playingId));
 const voice = createVoice(settings);
 const alerts = createAlerts({ cameras, plates, speedCameras: createSpeedCameras(), voice, settings });
 const truckCheck = createTruckCheck({ app, cameras, voice, settings });
+const engine = createEngine({ voice });
 const detector = createDetector({
   map,
   voice,
@@ -156,6 +159,7 @@ function updateStatus() {
     toast('This app has used over 100 MB. Tap LOW DATA to save your hotspot.', 8000);
     voice.alert('trip', 'This app has used over 100 megabytes of hotspot data.');
   }
+  engine.paint();
   const silentFor = Date.now() - Math.max(lastFixAt, visibleSince);
   if (appVisible && !gpsLostSpoken && lastFix && lastFix.source === 'truck' && silentFor > GPS_LOST_MS) {
     gpsLostSpoken = true;
@@ -228,8 +232,9 @@ function onFix(raw) {
     moving = nowMoving;
     cameras.refresh();
     truckCheck.refresh();
-    // Setup buttons show only while parked.
+    // Setup buttons and steps show only while parked.
     if (openSheetKind() === 'detector') openDetector();
+    if (openSheetKind() === 'engine') openEngine();
   }
   updateStatus();
 }
@@ -271,7 +276,10 @@ function openDetector() {
 detector.onStateChange(() => {
   if (openSheetKind() === 'detector') openDetector();
 });
-$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, openVoice, openDetector }));
+function openEngine() {
+  openEnginePanel({ engine, isMoving: () => moving });
+}
+$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, openVoice, openDetector, openEngine }));
 $('btn-recenter').addEventListener('click', () => truck.setFollowing(true));
 $('btn-sheet-close').addEventListener('click', closeSheet);
 map.on('contextmenu', (e) => routing.confirmPoint(e.latlng));

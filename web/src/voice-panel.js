@@ -11,6 +11,7 @@ const SWITCHES = [
   ['sayTrip', 'DATA AND TRIP ALERTS'],
   ['sayLink', 'LOST GPS OR INTERNET'],
   ['sayDetector', 'PLATE-READER DETECTOR (USB BOARD)'],
+  ['sayEngine', 'ENGINE RUNNING HOT (ANDROBD)'],
 ];
 
 /** ctx: { settings, save(), voice, truckCheck, lastFix(), lastFixAt() } */

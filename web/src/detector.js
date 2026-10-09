@@ -22,6 +22,7 @@ import {
 
 const STORE_KEY = 'gev-road-detections';
 const SAVE_EVERY_MS = 60 * 1000; // repeat hits only bump counts: saved at most this often
+const REDRAW_DELAY_MS = 1000; // several hits in a row redraw the pins once
 
 function hasNative() {
   return !!(window.GevNative && typeof window.GevNative.detectorStatus === 'function');
@@ -36,6 +37,7 @@ export function createDetector(deps) {
   let speech = emptySpeechState();
   let enabled = false;
   let savedAt = 0;
+  let redrawTimer = null;
 
   function load() {
     try {
@@ -80,8 +82,19 @@ export function createDetector(deps) {
     group.clearLayers();
     for (const r of records) {
       if (r.lat === null || r.tier < PIN_MIN_TIER) continue;
-      dot(r.lat, r.lon, r.tier >= STRONG_TIER ? 'heard' : 'heard-weak', () => show(r)).addTo(group);
+      // The newest copy of the record: repeat hits update counts without a redraw.
+      const latest = () => records.find((x) => x.mac === r.mac) || r;
+      dot(r.lat, r.lon, r.tier >= STRONG_TIER ? 'heard' : 'heard-weak', () => show(latest())).addTo(group);
     }
+  }
+
+  function redrawSoon() {
+    if (redrawTimer !== null) return;
+    redrawTimer = setTimeout(() => {
+      redrawTimer = null;
+      save();
+      if (enabled) draw();
+    }, REDRAW_DELAY_MS);
   }
 
   function onLine(line) {
@@ -90,8 +103,8 @@ export function createDetector(deps) {
     const now = Date.now();
     const merged = mergeDetection(records, det, getFix(), now);
     records = merged.records;
-    if (merged.changed || now - savedAt > SAVE_EVERY_MS) save();
-    if (merged.changed && enabled) draw();
+    if (merged.changed) redrawSoon();
+    else if (now - savedAt > SAVE_EVERY_MS) save();
     const decision = speakDecision(det, speech, now, settings.detectorWeakHits);
     speech = decision.state;
     if (decision.speak) voice.alert('detector', DETECTION_TEXT);
@@ -132,7 +145,6 @@ export function createDetector(deps) {
     onStateChange(fn) {
       stateWatchers.push(fn);
     },
-    hasNative,
     /** The app's { state, problem, lines, autoOpen, usbHost }, or null outside the app. */
     status: nativeState,
     statusText: () => statusText(nativeState()),

@@ -32,8 +32,9 @@ const GONE_MS = 5 * 60 * 1000; // a camera not heard this long has been left beh
 const MAC_SPEAK_GAP_MS = 10 * 60 * 1000; // and speaks again on return only after this long
 const ANY_SPEAK_GAP_MS = 60 * 1000; // a second camera at the same spot within a minute stays quiet
 const FORGET_MS = 60 * 60 * 1000; // speech memory older than this is dropped
+const MAX_REMEMBERED = 500; // and at most this many cameras (a broken board could invent thousands)
 
-/** One line from the board -> { mac, method, tier, rssi, ble } for a detection, else null. */
+/** One line from the board -> { mac, tier, rssi } for a detection, else null. */
 export function parseDetectorLine(line) {
   if (typeof line !== 'string' || line.length > MAX_LINE_CHARS || line.charAt(0) !== '{') return null;
   let o;
@@ -46,12 +47,15 @@ export function parseDetectorLine(line) {
   const mac = String(o.mac_address || '').toLowerCase();
   if (!MAC_RE.test(mac)) return null;
   const method = o.detection_method.slice(0, 40);
+  const known = Object.prototype.hasOwnProperty.call(METHOD_TIERS, method); // not "constructor" or "__proto__"
   const tier =
     Number.isInteger(o.detection_tier) && o.detection_tier >= 0 && o.detection_tier <= 4
       ? o.detection_tier
-      : METHOD_TIERS[method] || 0;
+      : known
+        ? METHOD_TIERS[method]
+        : 0;
   const rssi = Number.isInteger(o.rssi) && o.rssi < 0 && o.rssi >= -127 ? o.rssi : null;
-  return { mac, method, tier, rssi, ble: o.protocol === 'ble' };
+  return { mac, tier, rssi };
 }
 
 export function tierLabel(tier) {
@@ -85,7 +89,6 @@ export function mergeDetection(records, det, fix, now) {
   const upgraded = !!old && det.tier > old.tier;
   const record = {
     mac: det.mac,
-    method: !old || upgraded ? det.method : old.method,
     tier: old ? Math.max(old.tier, det.tier) : det.tier,
     rssi: louder || !old ? det.rssi : old.rssi,
     lat: louder ? here.lat : old ? old.lat : null,
@@ -124,10 +127,12 @@ export function emptySpeechState() {
 }
 
 function prune(times, now) {
+  const recent = Object.keys(times)
+    .filter((mac) => now - times[mac] < FORGET_MS)
+    .sort((a, b) => times[b] - times[a])
+    .slice(0, MAX_REMEMBERED);
   const kept = {};
-  for (const mac of Object.keys(times)) {
-    if (now - times[mac] < FORGET_MS) kept[mac] = times[mac];
-  }
+  for (const mac of recent) kept[mac] = times[mac];
   return kept;
 }
 

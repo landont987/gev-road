@@ -35,8 +35,22 @@
             </intent-filter>
         </activity>
 
+        <!-- Engine data from the separate AndrOBD app: it finds GEV Road through this
+             receiver and starts the service with its live data (see AndrobdPlugin). -->
+        <receiver
+            android:name=".AndrobdPlugin"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.fr3ts0n.androbd.plugin.IDENTIFY" />
+                <category android:name="com.fr3ts0n.androbd.plugin.REQUEST" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".EngineDataService"
+            android:exported="true" />
+
         <!-- Off until the driver turns it on in the app (Detector.setAutoOpen): opens
-             GEV Road when the plate-reader detector (an Espressif USB board) is plugged
+             GEV Road when the plate-reader detector (an ESP32-S3 USB board) is plugged
              in, and lets Android remember the USB permission ("use by default"). -->
         <activity-alias
             android:name=".DetectorPlugged"

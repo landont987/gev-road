@@ -66,6 +66,9 @@ public class MainActivity extends Activity {
     private RadioDrawer radio;
     private Speech speech;
     private Detector detector;
+    // AndrOBD's engine data, passed to the page as it comes (see AndrobdPlugin).
+    private final EngineFeed.Listener engineListener = (kind, text) ->
+            js("window.gevOnEngine&&window.gevOnEngine(" + jsString(kind) + "," + jsString(text) + ")");
     private BroadcastReceiver debugDetectorLines;
     private ConnectivityManager connectivity;
     private ConnectivityManager.NetworkCallback networkWatch;
@@ -117,7 +120,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onProblem(String what) {
-                runOnUiThread(() -> js("window.gevOnVoiceProblem&&window.gevOnVoiceProblem(" + JSONObject.quote(what) + ")"));
+                runOnUiThread(() -> js("window.gevOnVoiceProblem&&window.gevOnVoiceProblem(" + jsString(what) + ")"));
             }
         });
 
@@ -196,6 +199,7 @@ public class MainActivity extends Activity {
         web.loadUrl(START_URL);
         watchNetwork();
         startDetector();
+        EngineFeed.setListener(engineListener);
     }
 
     /** The plate-reader detector's lines and state go to the page as they come. */
@@ -203,16 +207,17 @@ public class MainActivity extends Activity {
         detector = new Detector(this, new Detector.Listener() {
             @Override
             public void onLine(String line) {
-                js("window.gevOnDetectorLine&&window.gevOnDetectorLine(" + JSONObject.quote(line) + ")");
+                js("window.gevOnDetectorLine&&window.gevOnDetectorLine(" + jsString(line) + ")");
             }
 
             @Override
             public void onState(String stateJson) {
-                js("window.gevOnDetectorState&&window.gevOnDetectorState(" + JSONObject.quote(stateJson) + ")");
+                js("window.gevOnDetectorState&&window.gevOnDetectorState(" + jsString(stateJson) + ")");
             }
         });
+        // start() finds a board that is already plugged in, including when the
+        // "plugged in" alias opened the app.
         detector.start();
-        detector.onLaunchIntent(getIntent());
         if (BuildConfig.DEBUG) {
             // The emulator has no USB: this feeds the same path a board's bytes take.
             debugDetectorLines = new BroadcastReceiver() {
@@ -227,17 +232,23 @@ public class MainActivity extends Activity {
                     }
                 }
             };
+            // Only senders holding DUMP (adb's shell has it; ordinary apps cannot) may use it.
             IntentFilter filter = new IntentFilter(DEBUG_DETECTOR_ACTION);
-            if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(debugDetectorLines, filter, Context.RECEIVER_EXPORTED);
-            else registerReceiver(debugDetectorLines, filter);
+            String dumpOnly = android.Manifest.permission.DUMP;
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(debugDetectorLines, filter, dumpOnly, null, Context.RECEIVER_EXPORTED);
+            } else {
+                registerReceiver(debugDetectorLines, filter, dumpOnly, null);
+            }
         }
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        setIntent(intent);
-        // Opened again because the detector was plugged in (the auto-open alias is on).
+        // Opened again because the detector was plugged in (the auto-open alias is on). Android
+        // grants the permission with this launch, possibly after its plug-in broadcast arrived.
+        // Not kept with setIntent: a rebuilt screen must not replay an old plug-in.
         if (detector != null) detector.onLaunchIntent(intent);
     }
 
@@ -277,6 +288,14 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Text as a JavaScript string literal. JSONObject.quote leaves U+2028 and U+2029
+     * as they are, and JavaScript before Chrome 66 ends a string at either one.
+     */
+    static String jsString(String text) {
+        return JSONObject.quote(text).replace("\u2028", "\\u2028").replace("\u2029", "\\u2029");
+    }
+
     /** Runs page script unless the screen or its page process is gone (callbacks can arrive late). */
     private void js(String code) {
         if (!isDestroyed() && !rendererGone) web.evaluateJavascript(code, null);
@@ -310,6 +329,7 @@ public class MainActivity extends Activity {
         stopGps();
         if (debugDetectorLines != null) unregisterReceiver(debugDetectorLines);
         detector.stop();
+        EngineFeed.clearListener(engineListener);
         if (networkWatch != null) connectivity.unregisterNetworkCallback(networkWatch);
         speech.shutdown();
         radio.destroy();
@@ -363,6 +383,12 @@ public class MainActivity extends Activity {
 
     /** Methods the page can call as window.GevNative.*. */
     private class Bridge {
+        /** AndrOBD's last DATALIST (it names the units), or "" before the first one. */
+        @JavascriptInterface
+        public String engineList() {
+            return EngineFeed.lastList(MainActivity.this);
+        }
+
         /** The plate-reader detector: { state, problem, lines, autoOpen, usbHost } as JSON. */
         @JavascriptInterface
         public String detectorStatus() {
@@ -409,7 +435,7 @@ public class MainActivity extends Activity {
                     result = new NativeHttp.Result(0, "app error: " + e.getClass().getSimpleName());
                 }
                 final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
-                        + JSONObject.quote(result.body) + "," + result.ageSeconds + ")";
+                        + jsString(result.body) + "," + result.ageSeconds + ")";
                 runOnUiThread(() -> js(js));
             }, "gev-http-" + id).start();
         }
@@ -433,7 +459,7 @@ public class MainActivity extends Activity {
                     result = new NativeHttp.Result(0, "app error: " + e.getClass().getSimpleName());
                 }
                 final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
-                        + JSONObject.quote(result.body) + "," + result.ageSeconds + ")";
+                        + jsString(result.body) + "," + result.ageSeconds + ")";
                 runOnUiThread(() -> js(js));
             }, "gev-http-" + id).start();
         }

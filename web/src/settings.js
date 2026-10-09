@@ -20,6 +20,8 @@ const DEFAULTS = {
   truckCheck: true,
   // The USB plate-reader detector (detector.js).
   sayDetector: true,
+  // Engine data from the AndrOBD app (engine.js).
+  sayEngine: true,
   detectorWeakHits: false,
 };
 

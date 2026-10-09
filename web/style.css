@@ -91,6 +91,11 @@ button[disabled] {
   color: var(--muted);
   letter-spacing: 0.05em;
 }
+/* Engine data from AndrOBD; orange and bold when the coolant is 230°F or more. */
+#engine.hot {
+  color: var(--warn);
+  font-weight: 800;
+}
 .badge {
   margin-top: 8px;
   display: inline-block;

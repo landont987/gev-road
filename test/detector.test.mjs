@@ -21,13 +21,13 @@ const SERIAL = fs.readFileSync(new URL('./fixtures/flockyou-serial.txt', import.
 test('parseDetectorLine reads only detection lines from a real-format serial log', () => {
   const dets = SERIAL.map(parseDetectorLine).filter(Boolean);
   assert.deepEqual(
-    dets.map((d) => `${d.mac} ${d.method} ${d.tier} ${d.rssi} ${d.ble}`),
+    dets.map((d) => `${d.mac} ${d.tier} ${d.rssi}`),
     [
-      'b4:1e:52:0a:11:22 wifi_wildcard_probe_ie_sig 4 -82 false',
-      'b4:1e:52:0a:11:22 wifi_wildcard_probe_ie_sig 4 -64 false',
-      'd4:4f:67:30:9a:01 ble_name 2 -77 true',
-      '70:c9:4e:12:34:56 wifi_oui_addr1 1 -90 false',
-      '82:6b:f2:00:aa:10 wifi_wildcard_probe 3 -71 false',
+      'b4:1e:52:0a:11:22 4 -82',
+      'b4:1e:52:0a:11:22 4 -64',
+      'd4:4f:67:30:9a:01 2 -77',
+      '70:c9:4e:12:34:56 1 -90',
+      '82:6b:f2:00:aa:10 3 -71',
     ],
   );
 });
@@ -51,7 +51,7 @@ test('parseDetectorLine rejects anything that is not a well-formed detection', (
   assert.equal(parseDetectorLine('null'), null);
 });
 
-const det = (mac, tier, rssi) => ({ mac, method: tier >= 4 ? 'wifi_wildcard_probe_ie_sig' : 'wifi_wildcard_probe', tier, rssi, ble: false });
+const det = (mac, tier, rssi) => ({ mac, tier, rssi });
 const fixAt = (lat, lon, at) => ({ lat, lon, at });
 
 test('mergeDetection pins the truck position where the camera was loudest', () => {
@@ -64,7 +64,7 @@ test('mergeDetection pins the truck position where the camera was loudest', () =
   m = mergeDetection(m.records, det('aa:aa:aa:aa:aa:01', 3, -75), fixAt(33.62, -112.22, t + 10000), t + 10000);
   assert.deepEqual([m.record.lat, m.record.rssi, m.record.count, m.changed], [33.61, -60, 3, false], 'quieter keeps it');
   m = mergeDetection(m.records, det('aa:aa:aa:aa:aa:01', 4, -80), fixAt(33.63, -112.23, t + 15000), t + 15000);
-  assert.deepEqual([m.record.tier, m.record.method, m.record.lat, m.changed], [4, 'wifi_wildcard_probe_ie_sig', 33.61, true], 'upgrade');
+  assert.deepEqual([m.record.tier, m.record.lat, m.changed], [4, 33.61, true], 'upgrade');
   m = mergeDetection(m.records, det('aa:aa:aa:aa:aa:01', 3, -80), null, t + 20000);
   assert.equal(m.record.tier, 4, 'the best tier sticks');
   assert.equal(m.records.length, 1);
@@ -149,4 +149,21 @@ test('isRecord drops stored junk', () => {
   assert.equal(isRecord({ mac: 'aa:bb:cc:dd:ee:ff', tier: 3, lat: 'x', lon: 1, lastAt: 1, count: 1 }), false);
   assert.equal(isRecord({ mac: '<b>', tier: 3, lat: null, lastAt: 1, count: 1 }), false);
   assert.equal(isRecord(null), false);
+});
+
+test('a method named like an object property gets no tier from it', () => {
+  const line = (method) => JSON.stringify({ event: 'detection', detection_method: method, mac_address: 'aa:bb:cc:dd:ee:ff' });
+  assert.equal(parseDetectorLine(line('constructor')).tier, 0);
+  assert.equal(parseDetectorLine(line('__proto__')).tier, 0);
+  assert.equal(parseDetectorLine(line('toString')).tier, 0);
+});
+
+test('speech memory stays bounded when a broken board invents thousands of cameras', () => {
+  let s = emptySpeechState();
+  for (let i = 0; i < 2000; i++) {
+    const mac = `aa:aa:aa:aa:${(i >> 8).toString(16).padStart(2, '0')}:${(i & 255).toString(16).padStart(2, '0')}`;
+    s = speakDecision(det(mac, 4, -70), s, 1000 + i, false).state;
+  }
+  assert.ok(Object.keys(s.heardAt).length <= 501, `${Object.keys(s.heardAt).length} remembered`);
+  assert.ok(Object.keys(s.spokenAt).length <= 501);
 });
