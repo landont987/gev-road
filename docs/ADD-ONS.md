@@ -115,7 +115,7 @@ What the research changed:
   TOPAZ and MCSO** (RWC had 91). If GEV Road's DPS or TOPAZ buttons are silent, a dead
   Broadcastify feed is the likely cause, not encryption.
 
-Home build (about **$290–320** with the kit antenna):
+Home build (about **$290–340** with the kit antenna):
 
 | Item | Price | Where | |
 |---|---|---|---|
