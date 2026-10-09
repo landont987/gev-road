@@ -62,13 +62,14 @@ discovery, data list, readings) gave the status line and the spoken warning. A
 second review found ways a normal engine could be called hot when AndrOBD is set to
 °F (AndrOBD sends the °F number a moment before it says "°F"); those are fixed and
 proven on the emulator and in tests. If GEV Road does not know AndrOBD's units yet,
-it shows no temperature rather than guess. **Not proven:** the real AndrOBD app
-talking to GEV Road (needs AndrOBD installed), the adapter, and your truck.
+it shows no temperature rather than guess. **Proven Oct 9 with the real AndrOBD
+2.7.10 (F-Droid) in demo mode:** it found GEV Road by itself, connected to it, sent its
+data list and readings, and GEV Road showed "ENGINE 262°F · 9.3 V" in orange and said
+"Engine running hot." It kept sending with GEV Road in front. **Not proven:** the
+adapter and your truck.
 
 Before buying anything:
-1. **Test with AndrOBD's demo mode.** It makes up coolant readings that jump around
-   and go above 230°F. I need your OK to download AndrOBD (F-Droid,
-   `com.fr3ts0n.ecu.gui.androbd`, 2.3 MB) onto the emulator.
+1. ~~Test with AndrOBD's demo mode.~~ Done Oct 9 (you said yes): it works.
 2. **Hotspot test.** The WiCAN adapter joins your iPhone hotspot, and the head unit
    has to reach it there. Apple doesn't promise that two hotspot devices can talk to
    each other (user reports say it works). We test it with two devices before you buy.
