@@ -59,7 +59,12 @@ const SEEN = '{"found": true, "confidence": "high", "box_2d": [400, 300, 600, 50
 const CAM = { id: '960', name: 'I-10 @Tunnel EB', lat: 33.45, lon: -112.07, imageUrl: 'https://az511.com/map/Cctv/960' };
 const stopped = { source: 'truck', lat: 33.4505, lon: -112.0705, speed: 0, bearing: null };
 const moving = Object.assign({}, stopped, { speed: 15 });
-const flush = () => new Promise((resolve) => setTimeout(resolve, 5));
+// Lets each fake bridge answer (one setImmediate per request) and the promise
+// chain after it finish. Counted in event-loop turns, not milliseconds, so a busy
+// machine cannot cut a check short (a 5 ms timer did, once).
+const flush = async () => {
+  for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setImmediate(resolve));
+};
 
 let said;
 let check;
