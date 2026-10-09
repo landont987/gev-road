@@ -419,6 +419,21 @@ body.drive #status .speed {
   border-color: #2a0006;
   background: var(--alpr);
 }
+/* A camera the USB detector heard: an orange diamond, set apart from the mapped red dots. */
+.dot-heard::after,
+.dot-heard-weak::after {
+  border-radius: 2px;
+  border-color: #2a1600;
+  background: var(--warn);
+  transform: rotate(45deg);
+}
+.dot-heard-weak::after {
+  left: 13px;
+  top: 13px;
+  width: 10px;
+  height: 10px;
+  opacity: 0.6;
+}
 
 /* The Android radio drawer sets --drawer to its height while it is up. */
 :root {

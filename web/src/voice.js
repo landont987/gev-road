@@ -16,6 +16,7 @@ const SWITCH = {
   redlight: 'sayEnforcement',
   trip: 'sayTrip',
   link: 'sayLink',
+  detector: 'sayDetector',
 };
 const SAMPLE = 'This is your GEV Road voice. Plate reader ahead.';
 
@@ -67,7 +68,7 @@ export function createVoice(settings) {
   }
 
   return {
-    /** kind: plate | camera | speed | redlight | trip | link */
+    /** kind: plate | camera | speed | redlight | trip | link | detector */
     alert(kind, text) {
       if (settings.voice && settings[SWITCH[kind]]) say(text);
     },

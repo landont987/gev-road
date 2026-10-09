@@ -11,7 +11,7 @@ import {
   MOVING_SPEED_MPS,
   DATA_WARN_BYTES,
 } from './config.js';
-import { $, setOn, toast, closeSheet } from './ui.js';
+import { $, setOn, toast, closeSheet, openSheetKind } from './ui.js';
 import { distanceM } from './geo.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { createGps } from './gps.js';
@@ -27,6 +27,8 @@ import { createAlerts } from './alerts.js';
 import { createSpeedCameras } from './speed-cameras.js';
 import { createTruckCheck } from './truck-check.js';
 import { openVoicePanel } from './voice-panel.js';
+import { createDetector } from './detector.js';
+import { openDetectorPanel } from './detector-panel.js';
 
 const settings = loadSettings();
 const MPS_TO_MPH = 2.23694;
@@ -85,6 +87,12 @@ radio.onChange((playingId) => setOn($('btn-radio'), !!playingId));
 const voice = createVoice(settings);
 const alerts = createAlerts({ cameras, plates, speedCameras: createSpeedCameras(), voice, settings });
 const truckCheck = createTruckCheck({ app, cameras, voice, settings });
+const detector = createDetector({
+  map,
+  voice,
+  settings,
+  getFix: () => (lastFix ? { lat: lastFix.lat, lon: lastFix.lon, at: lastFixAt } : null),
+});
 
 // The hotspot dropping or coming back, from the Android app (or the browser).
 let spokenOnline = true;
@@ -171,6 +179,7 @@ function applySettings() {
   if (map.getZoom() > maxZoom) map.setZoom(maxZoom, { animate: false });
   cameras.setEnabled(settings.cameras);
   plates.setEnabled(settings.plates);
+  detector.setEnabled(settings.plates);
   radio.onLowData(settings.lowData);
   traffic.setEnabled(settings.traffic && !settings.lowData);
   cameras.refresh();
@@ -219,6 +228,8 @@ function onFix(raw) {
     moving = nowMoving;
     cameras.refresh();
     truckCheck.refresh();
+    // Setup buttons show only while parked.
+    if (openSheetKind() === 'detector') openDetector();
   }
   updateStatus();
 }
@@ -254,7 +265,13 @@ $('btn-zoom-out').addEventListener('click', () => map.zoomOut(1, { animate: fals
 function openVoice() {
   openVoicePanel({ settings, save: applySettings, voice, truckCheck, lastFix: () => lastFix, lastFixAt: () => lastFixAt });
 }
-$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, openVoice }));
+function openDetector() {
+  openDetectorPanel({ detector, settings, save: applySettings, isMoving: () => moving });
+}
+detector.onStateChange(() => {
+  if (openSheetKind() === 'detector') openDetector();
+});
+$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, openVoice, openDetector }));
 $('btn-recenter').addEventListener('click', () => truck.setFollowing(true));
 $('btn-sheet-close').addEventListener('click', closeSheet);
 map.on('contextmenu', (e) => routing.confirmPoint(e.latlng));

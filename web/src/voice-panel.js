@@ -10,6 +10,7 @@ const SWITCHES = [
   ['sayEnforcement', 'SPEED AND RED-LIGHT CAMERAS'],
   ['sayTrip', 'DATA AND TRIP ALERTS'],
   ['sayLink', 'LOST GPS OR INTERNET'],
+  ['sayDetector', 'PLATE-READER DETECTOR (USB BOARD)'],
 ];
 
 /** ctx: { settings, save(), voice, truckCheck, lastFix(), lastFixAt() } */

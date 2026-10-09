@@ -2,7 +2,10 @@ package com.landon.gevroad;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
@@ -15,6 +18,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Process;
 import android.os.SystemClock;
+import android.util.Base64;
 import android.util.Log;
 import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
@@ -34,6 +38,7 @@ import androidx.webkit.WebViewAssetLoader;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -42,8 +47,8 @@ import java.util.regex.Pattern;
 
 /**
  * One full-screen WebView showing the bundled map page (assets/web), plus the
- * truck's GPS pushed into the page, an exact per-app data meter, spoken alerts
- * and the hotspot's online/offline state.
+ * truck's GPS pushed into the page, an exact per-app data meter, spoken alerts,
+ * the hotspot's online/offline state and the USB plate-reader detector.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "GevRoad";
@@ -54,10 +59,14 @@ public class MainActivity extends Activity {
     // A saved fix older than this is not shown as the truck's position.
     private static final long LAST_FIX_MAX_AGE_MS = 30000;
     private static final Pattern KEY_IN_URL = Pattern.compile("([?&](?:key|api_key|apikey|token))=[^&\\s\"']+");
+    // Debug builds only: adb shell am broadcast -a <this> --es b64 <base64 text> feeds the detector.
+    private static final String DEBUG_DETECTOR_ACTION = "com.landon.gevroad.DEBUG_DETECTOR_LINES";
 
     private WebView web;
     private RadioDrawer radio;
     private Speech speech;
+    private Detector detector;
+    private BroadcastReceiver debugDetectorLines;
     private ConnectivityManager connectivity;
     private ConnectivityManager.NetworkCallback networkWatch;
     private Boolean lastOnline;
@@ -186,6 +195,50 @@ public class MainActivity extends Activity {
         setContentView(root);
         web.loadUrl(START_URL);
         watchNetwork();
+        startDetector();
+    }
+
+    /** The plate-reader detector's lines and state go to the page as they come. */
+    private void startDetector() {
+        detector = new Detector(this, new Detector.Listener() {
+            @Override
+            public void onLine(String line) {
+                js("window.gevOnDetectorLine&&window.gevOnDetectorLine(" + JSONObject.quote(line) + ")");
+            }
+
+            @Override
+            public void onState(String stateJson) {
+                js("window.gevOnDetectorState&&window.gevOnDetectorState(" + JSONObject.quote(stateJson) + ")");
+            }
+        });
+        detector.start();
+        detector.onLaunchIntent(getIntent());
+        if (BuildConfig.DEBUG) {
+            // The emulator has no USB: this feeds the same path a board's bytes take.
+            debugDetectorLines = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    String b64 = intent.getStringExtra("b64");
+                    if (b64 == null) return;
+                    try {
+                        detector.injectForTest(new String(Base64.decode(b64, Base64.DEFAULT), StandardCharsets.UTF_8));
+                    } catch (IllegalArgumentException e) {
+                        Log.w(TAG, "debug detector lines: not base64");
+                    }
+                }
+            };
+            IntentFilter filter = new IntentFilter(DEBUG_DETECTOR_ACTION);
+            if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(debugDetectorLines, filter, Context.RECEIVER_EXPORTED);
+            else registerReceiver(debugDetectorLines, filter);
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        // Opened again because the detector was plugged in (the auto-open alias is on).
+        if (detector != null) detector.onLaunchIntent(intent);
     }
 
     /** Tells the page when the hotspot connection drops or comes back (for the spoken alert). */
@@ -255,6 +308,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopGps();
+        if (debugDetectorLines != null) unregisterReceiver(debugDetectorLines);
+        detector.stop();
         if (networkWatch != null) connectivity.unregisterNetworkCallback(networkWatch);
         speech.shutdown();
         radio.destroy();
@@ -308,6 +363,24 @@ public class MainActivity extends Activity {
 
     /** Methods the page can call as window.GevNative.*. */
     private class Bridge {
+        /** The plate-reader detector: { state, problem, lines, autoOpen, usbHost } as JSON. */
+        @JavascriptInterface
+        public String detectorStatus() {
+            return detector.stateJson();
+        }
+
+        /** Ask Android for USB permission for the detector (the page only offers this while parked). */
+        @JavascriptInterface
+        public void detectorConnect() {
+            runOnUiThread(() -> detector.connect());
+        }
+
+        /** Open GEV Road when the detector is plugged in (and let Android remember the permission). */
+        @JavascriptInterface
+        public void detectorAutoOpen(final boolean on) {
+            runOnUiThread(() -> detector.setAutoOpen(on));
+        }
+
         /** Show a scanner page (Broadcastify or OpenMHz only) in the radio drawer. */
         @JavascriptInterface
         public void radioOpen(String url, String name) {

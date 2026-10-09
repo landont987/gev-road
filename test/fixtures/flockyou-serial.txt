@@ -1,0 +1,14 @@
+[flockyou] SPIFFS ready
+[flockyou] merged WiFi detector started
+[flockyou] mode=promiscuous dwell_ms=250 start_channel=13 rssi_min=-95 spiffs=1
+{"event":"config","beep_mask":29,"oui_count":34,"tiers":[{"tier":0,"method":"wifi_ssid","beep":0},{"tier":1,"method":"wifi_oui_addr1_addr3","beep":1},{"tier":2,"method":"wifi_oui_addr2","beep":1},{"tier":3,"method":"wifi_wildcard_probe","beep":1},{"tier":4,"method":"wifi_wildcard_probe_ie_sig","beep":1}]}
+[flockyou] DETECT-OUI mac=b4:1e:52:0a:11:22 oui=b4:1e:52 rssi=-82 ch=6 addr=addr2 count=1
+{"event":"detection","detection_method":"wifi_wildcard_probe_ie_sig","detection_tier":4,"protocol":"wifi_2_4ghz","mac_address":"b4:1e:52:0a:11:22","oui":"b4:1e:52","device_name":"","rssi":-82,"channel":6,"frequency":2437,"ssid":""}
+[flockyou] DETECT-OUI mac=b4:1e:52:0a:11:22 oui=b4:1e:52 rssi=-64 ch=11 addr=addr2 count=2
+{"event":"detection","detection_method":"wifi_wildcard_probe_ie_sig","detection_tier":4,"protocol":"wifi_2_4ghz","mac_address":"b4:1e:52:0a:11:22","oui":"b4:1e:52","device_name":"","rssi":-64,"channel":11,"frequency":2462,"ssid":""}
+[flockyou] DETECT-BLE method=ble_name mac=d4:4f:67:30:9a:01 name="Penguin-4012345678" rssi=-77 count=1
+{"event":"detection","detection_method":"ble_name","detection_tier":2,"protocol":"ble","mac_address":"d4:4f:67:30:9a:01","oui":"d4:4f:67","device_name":"Penguin-4012345678","rssi":-77,"channel":255,"frequency":0,"ssid":""}
+[flockyou] DETECT-OUI mac=70:c9:4e:12:34:56 oui=70:c9:4e rssi=-90 ch=1 addr=addr1 count=1
+{"event":"detection","detection_method":"wifi_oui_addr1","detection_tier":1,"protocol":"wifi_2_4ghz","mac_address":"70:c9:4e:12:34:56","oui":"70:c9:4e","device_name":"","rssi":-90,"channel":1,"frequency":2412,"ssid":""}
+[flockyou] DETECT-OUI mac=82:6b:f2:00:aa:10 oui=82:6b:f2 rssi=-71 ch=3 addr=addr2 count=1
+{"event":"detection","detection_method":"wifi_wildcard_probe","detection_tier":3,"protocol":"wifi_2_4ghz","mac_address":"82:6b:f2:00:aa:10","oui":"82:6b:f2","device_name":"","rssi":-71,"channel":3,"frequency":2422,"ssid":""}

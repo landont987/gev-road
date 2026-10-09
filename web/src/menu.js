@@ -11,12 +11,13 @@ export function versionText(ua) {
     .join(' · ');
 }
 
-/** app: { gps, traffic, routing, dataText(), openVoice() } */
+/** app: { gps, traffic, routing, dataText(), openVoice(), openDetector() } */
 export function openMenu(app) {
   const body = openSheet('menu', 'Menu');
   const gps = app.gps;
 
   body.appendChild(el('button', { class: 'pill wide', onclick: () => app.openVoice() }, 'VOICE, ALERTS AND AI CHECK'));
+  body.appendChild(el('button', { class: 'pill wide', onclick: () => app.openDetector() }, 'PLATE-READER DETECTOR'));
 
   body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'LOCATION')));
   body.appendChild(
@@ -69,7 +70,8 @@ export function openMenu(app) {
       'Map: OpenStreetMap contributors. Cameras: ADOT / AZ511 via AZGeo. ' +
         'Plate readers: OpenStreetMap volunteers via DeFlock. Directions: OSRM (FOSSGIS). ' +
         'Search: Photon (komoot). Traffic: TomTom. Speed and red-light cameras: OpenStreetMap contributors. ' +
-        'AI voice: OpenAI (AI-generated, not a human). AI truck check: Gemini by Google. Built from the data sources of ' +
+        'AI voice: OpenAI (AI-generated, not a human). AI truck check: Gemini by Google. ' +
+        'Plate-reader detector: flock-you by colonelpanichacks (MIT), research by @NitekryDPaul and DeFlockJoplin. Built from the data sources of ' +
         "God's Eye View by Bilawal Sidhu (MIT license).",
     ),
   );

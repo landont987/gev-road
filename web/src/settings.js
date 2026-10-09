@@ -18,6 +18,9 @@ const DEFAULTS = {
   voiceName: 'cedar',
   voiceAccent: 'american',
   truckCheck: true,
+  // The USB plate-reader detector (detector.js).
+  sayDetector: true,
+  detectorWeakHits: false,
 };
 
 export function loadSettings() {
