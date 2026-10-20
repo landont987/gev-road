@@ -39,6 +39,10 @@ import androidx.webkit.WebViewAssetLoader;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -56,6 +60,12 @@ public class MainActivity extends Activity {
     private static final String APP_HOST = "appassets.androidplatform.net";
     private static final String START_URL = "https://" + APP_HOST + "/assets/web/index.html";
     private static final int LOCATION_REQUEST = 1;
+    // Map tiles kept on the unit (#51): a familiar route loads from disk and survives a hotspot drop.
+    private static final long TILE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
+    private static final long TILE_MAX_BYTES = 150L * 1024 * 1024;
+    // Short: the WebView may run these fetches one after another, so a stalled hotspot must not hold the page.
+    private static final int TILE_TIMEOUT_MS = 8000;
+    private static final long TILE_NETWORK_PAUSE_MS = 30000; // after a failed fetch, serve stale or hand over for this long
     private static final long GPS_INTERVAL_MS = 1000;
     // A saved fix older than this is not shown as the truck's position.
     private static final long LAST_FIX_MAX_AGE_MS = 30000;
@@ -65,6 +75,8 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private RadioDrawer radio;
+    private TileCache tiles;
+    private volatile long tileNetworkPausedUntil = 0;
     private Speech speech;
     private Detector detector;
     // AndrOBD's engine data, passed to the page as it comes (see AndrobdPlugin).
@@ -113,6 +125,9 @@ public class MainActivity extends Activity {
         txAtStart = TrafficStats.getUidTxBytes(uid);
         locations = (LocationManager) getSystemService(LOCATION_SERVICE);
         NativeHttp.init(this);
+        tiles = new TileCache(new File(getCacheDir(), "tiles"), TILE_MAX_AGE_MS, TILE_MAX_BYTES);
+        final TileCache toPrune = tiles;
+        new Thread(() -> toPrune.prune(System.currentTimeMillis()), "tile-prune").start();
         speech = new Speech(this, new Speech.Listener() {
             @Override
             public void onSpeaking(boolean speaking) {
@@ -147,6 +162,8 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                WebResourceResponse tile = tileResponse(request);
+                if (tile != null) return tile;
                 return assets.shouldInterceptRequest(request.getUrl());
             }
 
@@ -548,6 +565,45 @@ public class MainActivity extends Activity {
             return "null";
         }
         return out.toString();
+    }
+
+    /**
+     * An OpenStreetMap tile from the unit's own cache (#51), fetched and saved
+     * when missing or older than 30 days; a stale copy stands in when the
+     * network fails. Null lets the WebView fetch it the usual way. Runs on the
+     * WebView's own request threads, so a blocking fetch is fine here.
+     */
+    private WebResourceResponse tileResponse(WebResourceRequest request) {
+        Uri url = request.getUrl();
+        if (!"GET".equals(request.getMethod()) || !"https".equals(url.getScheme())
+                || !TileCache.HOST.equals(url.getHost())) return null;
+        String key = TileCache.key(url.getPath());
+        if (key == null) return null;
+        try {
+            long now = System.currentTimeMillis();
+            File cached = tiles.fresh(key, now);
+            if (cached != null) return tileFile(cached);
+            if (now >= tileNetworkPausedUntil) {
+                Map<String, String> headers = new LinkedHashMap<>();
+                headers.put("Accept", "image/png");
+                NativeHttp.BytesResult res = NativeHttp.requestBytes("GET", url.toString(), headers, null, TILE_TIMEOUT_MS);
+                if (res.status == 200 && TileCache.isPng(res.body)) {
+                    tiles.store(key, res.body);
+                    return new WebResourceResponse("image/png", null, new ByteArrayInputStream(res.body));
+                }
+                // One failure pauses tile fetches for a while, so a dead hotspot cannot hold every tile for 8 s each.
+                if (res.status == 0) tileNetworkPausedUntil = System.currentTimeMillis() + TILE_NETWORK_PAUSE_MS;
+            }
+            File stale = tiles.any(key);
+            if (stale != null) return tileFile(stale);
+        } catch (IOException | RuntimeException e) {
+            Log.w(TAG, "tile " + key + " failed", e);
+        }
+        return null;
+    }
+
+    private static WebResourceResponse tileFile(File file) throws IOException {
+        return new WebResourceResponse("image/png", null, new FileInputStream(file));
     }
 
     private static String orEmpty(String text) {
