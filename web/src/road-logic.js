@@ -270,6 +270,18 @@ export function spokenLine(spot, d) {
 }
 
 /**
+ * Meters to a spot that still deserves its card (in range and ahead for this
+ * heading), or null once the truck has passed it or turned away. A card that
+ * waited in the queue is checked again just before it shows.
+ */
+export function stillDueM(spot, fix) {
+  const rule = RULES[spot.kind];
+  if (!rule) return null;
+  const d = distanceM(fix, spot);
+  return d <= rule.withinM && isAheadForUs(fix, spot, d) ? d : null;
+}
+
+/**
  * spots: every road-info spot; fix: { lat, lon, bearing|null, speed|null };
  * shown: { id: true } from the last call (start with {}).
  * Returns the cards due now (closures and crashes first, then nearest) and the next `shown`.

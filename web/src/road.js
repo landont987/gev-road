@@ -10,7 +10,7 @@
 import L from 'leaflet';
 import { KEYS } from './config.js';
 import { nativeFetch } from './native-fetch.js';
-import { parseEvents, parseSigns, parseWeather, parseRestAreas, dueCards, milesText } from './road-logic.js';
+import { parseEvents, parseSigns, parseWeather, parseRestAreas, dueCards, milesText, stillDueM } from './road-logic.js';
 import { $, el } from './ui.js';
 import { distanceM } from './geo.js';
 import { dot } from './dots.js';
@@ -99,9 +99,23 @@ export function createRoad(deps) {
     return { nodes };
   }
 
+  /** The next queued card still worth showing, with its distance from where the truck is now. */
+  function nextCard() {
+    const fix = deps.getFix();
+    while (queue.length) {
+      const entry = queue.shift();
+      if (entry.tapped || !fix) return entry;
+      const d = stillDueM(entry.spot, fix);
+      if (d !== null) return { spot: entry.spot, distanceText: milesText(d) };
+    }
+    return null;
+  }
+
   function showNext() {
     if (showing || !queue.length) return;
-    const { spot, distanceText } = queue.shift();
+    const next = nextCard();
+    if (!next) return;
+    const { spot, distanceText } = next;
     const box = $('popup');
     box.textContent = '';
     box.className = `pop pop-${spot.kind}`;
@@ -150,7 +164,7 @@ export function createRoad(deps) {
     const fix = deps.getFix();
     // A tap replaces whatever is showing or waiting.
     queue.length = 0;
-    queue.push({ spot, distanceText: fix ? milesText(distanceM(fix, spot)) : '' });
+    queue.push({ spot, distanceText: fix ? milesText(distanceM(fix, spot)) : '', tapped: true });
     if (showing) hide();
     else showNext();
   }
