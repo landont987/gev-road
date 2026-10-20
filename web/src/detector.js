@@ -4,8 +4,7 @@
 // sits on the head unit's USB; the Android app (Detector.java) hands each of its
 // lines to window.gevOnDetectorLine and its connection state to gevOnDetectorState.
 
-import L from 'leaflet';
-import { dot } from './dots.js';
+import { createDotLayer } from './dots.js';
 import { el, openSheet } from './ui.js';
 import {
   parseDetectorLine,
@@ -31,7 +30,7 @@ function hasNative() {
 /** deps: { map, voice, settings, getFix() -> { lat, lon, at } | null } */
 export function createDetector(deps) {
   const { map, voice, settings, getFix } = deps;
-  const group = L.layerGroup();
+  const dots = createDotLayer(map);
   const stateWatchers = [];
   let records = load();
   let speech = emptySpeechState();
@@ -79,13 +78,14 @@ export function createDetector(deps) {
   }
 
   function draw() {
-    group.clearLayers();
+    const spots = [];
     for (const r of records) {
       if (r.lat === null || r.tier < PIN_MIN_TIER) continue;
       // The newest copy of the record: repeat hits update counts without a redraw.
       const latest = () => records.find((x) => x.mac === r.mac) || r;
-      dot(r.lat, r.lon, r.tier >= STRONG_TIER ? 'heard' : 'heard-weak', () => show(latest())).addTo(group);
+      spots.push({ lat: r.lat, lon: r.lon, kind: r.tier >= STRONG_TIER ? 'heard' : 'heard-weak', onTap: () => show(latest()) });
     }
+    dots.setSpots(spots);
   }
 
   function redrawSoon() {
@@ -134,12 +134,8 @@ export function createDetector(deps) {
   return {
     setEnabled(on) {
       enabled = on;
-      if (on) {
-        draw();
-        group.addTo(map);
-      } else {
-        map.removeLayer(group);
-      }
+      dots.setEnabled(on);
+      if (on) draw();
     },
     /** Called when the app reports a new connection state (the open panel redraws). */
     onStateChange(fn) {

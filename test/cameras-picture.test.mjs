@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allNodes } from './helpers/dom.mjs';
+import { allNodes, fakeMap } from './helpers/dom.mjs';
 
 const CAM = { id: '960', name: 'I-10 @Tunnel EB', road: 'I-10', direction: 'EB', lat: 33.45, lon: -112.07, imageUrl: 'https://az511.com/map/Cctv/960' };
 globalThis.__KEYS__ = {};
@@ -32,7 +32,7 @@ const buttons = () => sheet().filter((n) => n.tag === 'button').map((b) => b.tex
 test('a shown picture stays when the truck starts or stops moving; low data still removes it', async () => {
   let moving = false;
   let lowData = false;
-  const cams = createCameras({ removeLayer() {} }, { isMoving: () => moving, isLowData: () => lowData });
+  const cams = createCameras(fakeMap(), { isMoving: () => moving, isLowData: () => lowData });
   cams.setEnabled(true);
   await tick();
   const dot = markers.filter((m) => m.latlng[0] === CAM.lat)[0];

@@ -7,13 +7,12 @@
 // requests (nativeFetch). The closures list is about 2.4 MB of JSON but
 // travels gzipped, about 280 KB.
 
-import L from 'leaflet';
 import { KEYS } from './config.js';
 import { nativeFetch } from './native-fetch.js';
 import { parseEvents, parseSigns, parseWeather, parseRestAreas, dueCards, milesText, stillDueM } from './road-logic.js';
 import { $, el } from './ui.js';
 import { distanceM } from './geo.js';
-import { dot } from './dots.js';
+import { createDotLayer } from './dots.js';
 
 const API = 'https://az511.com/api/v2/get/';
 const MIN = 60 * 1000;
@@ -33,7 +32,7 @@ const SLIDE_MS = 300; // matches the transition in style.css
 /** deps: { map, voice, settings, app, getFix() } */
 export function createRoad(deps) {
   const { map, voice, settings, app } = deps;
-  const group = L.layerGroup();
+  const dots = createDotLayer(map);
   const lists = {}; // feed -> spots
   const fetchedAt = {}; // feed -> ms of the last try
   const loading = {};
@@ -44,8 +43,7 @@ export function createRoad(deps) {
   // ---- data ----
   function rebuild() {
     spots = [].concat(...Object.keys(lists).map((k) => lists[k]));
-    group.clearLayers();
-    for (const spot of spots) dot(spot.lat, spot.lon, spot.kind, () => tapped(spot)).addTo(group);
+    dots.setSpots(spots.map((spot) => ({ lat: spot.lat, lon: spot.lon, kind: spot.kind, onTap: () => tapped(spot) })));
   }
 
   function load(feed) {
@@ -173,11 +171,10 @@ export function createRoad(deps) {
     hasKey: () => !!KEYS.az511,
     setEnabled(on) {
       enabled = on && !!KEYS.az511;
+      dots.setEnabled(enabled);
       if (enabled) {
-        group.addTo(map);
         tick();
       } else {
-        map.removeLayer(group);
         queue.length = 0;
         hide();
       }

@@ -6,11 +6,16 @@ export const markers = [];
 function layer() {
   return {
     layers: [],
-    addTo() {
+    addTo(map) {
+      if (map && map.addLayer) map.addLayer(this);
       return this;
     },
     addLayer(l) {
       this.layers.push(l);
+      return this;
+    },
+    removeLayer(l) {
+      this.layers = this.layers.filter((x) => x !== l);
       return this;
     },
     clearLayers() {
