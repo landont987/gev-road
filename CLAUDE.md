@@ -75,6 +75,7 @@ later (see the "Go public" issue).
 - **OpenAI TTS:** `gpt-4o-mini-tts`, clips cached by hash, and the app must disclose that the voice is AI.
 - **ADOT:** reuses camera names, so camera alerts are keyed by place.
 - **Tile cache (0.3.12):** checked on the emulator 2026-10-20. `adb shell svc wifi disable` and `svc data disable` take the emulator offline; after a force-stop and restart the map shows from `cache/tiles` with DATA 0.0 MB. `run-as com.landon.gevroad find cache/tiles -name '*.png'` counts the tiles.
+- **0.3.13 on the emulator (2026-10-20):** the 2.4 MB closures feed arrives through `/native/http/<id>` in 9 ms; the menu reads "unit 1404 MB free of 1.9 GB, app process 80 MB"; PSS was app 90 MB, WebView renderer 105 MB with the drawer closed and 312 MB with a Broadcastify page open, so STOP (which now destroys the drawer's WebView) gives back about 200 MB. After a swipe during the demo drive the map re-followed within 11 s. DevTools: `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` and a node script with the global `WebSocket` (node 22) against `http://127.0.0.1:9222/json`.
 - **Debug a release build:**
   1. Temporarily set `WebView.setWebContentsDebuggingEnabled(true)` in `MainActivity`.
   2. Run `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`.
