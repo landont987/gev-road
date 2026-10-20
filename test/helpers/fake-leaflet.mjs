@@ -42,6 +42,11 @@ const L = {
         markers.push(this);
         return this;
       },
+      setLatLng(next) {
+        this.latlng = next;
+        return this;
+      },
+      getElement: () => null,
       tap() {
         this.handlers.click();
       },

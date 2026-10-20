@@ -25,6 +25,7 @@ export function createRouting(map, app) {
   let line = null;
   let pin = null;
   let offCount = 0;
+  let noRouteToasted = false;
   let offRouteSpoken = false;
   let rerouteFailSpoken = false; // once per time off route, like offRouteSpoken
   let routedAt = 0;
@@ -44,6 +45,7 @@ export function createRouting(map, app) {
     route = null;
     dest = null;
     alongM = null;
+    noRouteToasted = false;
     clearDrawing();
     $('turnbar').hidden = true;
   }
@@ -85,7 +87,11 @@ export function createRouting(map, app) {
     } catch (err) {
       if (mine !== generation) return;
       console.warn('route:', err);
-      if (err.noRoute) toast('No road route to that spot. Try a point on a road.');
+      if (err.noRoute) {
+        // Off route, a re-route runs every 30 s: say this once until a route works (#57).
+        if (!quiet || !noRouteToasted) toast('No road route to that spot. Try a point on a road.');
+        noRouteToasted = true;
+      }
       else if (quiet) {
         toast('Re-route failed. Still showing the old route.');
         if (!rerouteFailSpoken) app.say('trip', 'Could not find a new route. Check the hotspot.');
@@ -98,6 +104,7 @@ export function createRouting(map, app) {
     route = next;
     dest = target;
     offCount = 0;
+    noRouteToasted = false;
     draw(next, target);
     const p = routeProgress(next, from);
     alongM = p.alongM;
@@ -124,6 +131,7 @@ export function createRouting(map, app) {
     if (offCount === 0) {
       offRouteSpoken = false; // back on the line
       rerouteFailSpoken = false;
+      noRouteToasted = false;
     }
     if (offCount >= OFF_ROUTE_FIXES && Date.now() - routedAt > REROUTE_MIN_GAP_MS) {
       toast('Off route. Finding a new one...');
