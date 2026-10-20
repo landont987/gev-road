@@ -35,7 +35,7 @@ later (see the "Go public" issue).
 - `CHANGELOG.md`: one entry per version.
 
 ## Build, test, install
-- Tests: `npm test` (node:test, 174 tests at 0.3.12) and `sh scripts/test-java.sh` (LineFramer and TileCache; needs `JAVA_HOME=~/.local/jdk-17/Contents/Home`).
+- Tests: `npm test` (node:test, 188 tests at 0.3.13) and `sh scripts/test-java.sh` (LineFramer and TileCache; needs `JAVA_HOME=~/.local/jdk-17/Contents/Home`).
 - Release APK: `node scripts/build-web.mjs --android && cd android && JAVA_HOME=~/.local/jdk-17/Contents/Home ~/.local/gradle-9.8.0/bin/gradle assembleRelease`, then copy to `~/Desktop/GEV-Road-<version>.apk` and move the previous one to the Trash.
 - Every build bumps the version in `android/app/build.gradle.kts` (versionCode + versionName) and in `package.json`, gets a `CHANGELOG.md` entry, and gets a git tag `v<version>`.
 - Browser preview: `node scripts/dev.mjs` (port 4180). It relays `/az511/` because az511.com sends no CORS header. Voice, GPS, USB and AndrOBD don't exist in a browser.

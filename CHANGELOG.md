@@ -5,6 +5,14 @@ and `version` in `package.json`, so the ☰ menu's VERSION line tells builds apa
 Each version below has a git tag (`v0.3.9`, ...). APKs are never committed or
 uploaded: the API keys are built into them.
 
+## 0.3.13 (2026-10-20)
+Second bug and performance sweep before the first head-unit test (page modules and the Android shell; profile in docs/PERF-2026-10-20.md).
+- While moving, the map follows the truck again by itself 10 s after a stray finger drag, and a long press no longer opens "Drive here?" (both needed a tap while driving).
+- A streamed station or scanner restarts on its own when the stream ends or stalls, not only on an error.
+- The 2.4 MB closures feed no longer crosses into the page as one script literal on the UI thread: the page pulls it off-thread. The data meter is read every 5 s instead of on every GPS fix.
+- The radio drawer's WebView is built when a station opens and freed on STOP. The USB plate-reader board is retried for 3 s after a screen rebuild instead of once. The voice no longer waits 6 s for OpenAI on a hotspot with no data, and the unit's own voice is restarted if its engine dies.
+- Small: a carried GPS speed is carried once; the "No road route" toast shows once per time off route; one HTTP client per timeout.
+
 ## 0.3.12 (2026-10-20)
 Smoothness pass, part two (profile and findings in docs/PERF-2026-10-20.md).
 - Map tiles stay on the unit for 30 days: a familiar route loads from disk, a hotspot drop shows the saved tiles instead of grey squares, and less hotspot data goes to tiles. 150 MB cap, oldest tiles go first. A stalled hotspot pauses tile fetches for 30 s so the page never waits on them.

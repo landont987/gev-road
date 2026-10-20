@@ -11,8 +11,8 @@ android {
         // The head unit runs Android 9 (API 28). 26 is the floor for the adaptive icon.
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.3.12"
+        versionCode = 20
+        versionName = "0.3.13"
         // Conscrypt ships native code; the head unit (MT8163) and the test emulator are ARM.
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
