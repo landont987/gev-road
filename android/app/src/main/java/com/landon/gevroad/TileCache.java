@@ -11,14 +11,18 @@ import java.util.regex.Pattern;
 
 /**
  * Map tiles kept on the unit (#51): one file per tile under z/x/y, served
- * while younger than maxAgeMs, pruned oldest-first past maxBytes. The OSM
- * tile policy asks apps to cache tiles for at least 7 days. Plain Java, no
- * Android, so it can be tested on the computer.
+ * while younger than maxAgeMs, kept as an offline stand-in up to three
+ * times that, pruned oldest-first past maxBytes. The OSM tile policy asks
+ * apps to cache tiles for at least 7 days. Plain Java, no Android, so it can
+ * be tested on the computer.
  */
 final class TileCache {
     static final String HOST = "tile.openstreetmap.org";
     private static final Pattern TILE_PATH = Pattern.compile("^/(\\d{1,2})/(\\d{1,7})/(\\d{1,7})\\.png$");
     private static final int MAX_ZOOM = 19;
+    /** A stale tile is kept this many times maxAgeMs, so the map still shows after a month away. */
+    private static final int STALE_KEEP_FACTOR = 3;
+    private static final byte[] PNG_HEAD = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
 
     private final File dir;
     private final long maxAgeMs;
@@ -37,7 +41,7 @@ final class TileCache {
         if (!m.matches()) return null;
         int z = Integer.parseInt(m.group(1));
         if (z > MAX_ZOOM) return null;
-        return z + "/" + m.group(2) + "/" + m.group(3);
+        return z + "/" + Long.parseLong(m.group(2)) + "/" + Long.parseLong(m.group(3));
     }
 
     private File fileFor(String key) {
@@ -57,17 +61,29 @@ final class TileCache {
         return f.isFile() && f.length() > 0 ? f : null;
     }
 
-    /** Saves the tile (whole file or nothing). Returns the file, or null when nothing was saved. */
+    /** Whether the bytes start like a PNG: a 200 that is not a picture must not be kept for a month. */
+    static boolean isPng(byte[] bytes) {
+        if (bytes == null || bytes.length < PNG_HEAD.length) return false;
+        for (int i = 0; i < PNG_HEAD.length; i++) {
+            if (bytes[i] != PNG_HEAD[i]) return false;
+        }
+        return true;
+    }
+
+    /** Saves a PNG tile (whole file or nothing). Returns the file, or null when nothing was saved. */
     File store(String key, byte[] bytes) {
-        if (bytes == null || bytes.length == 0) return null;
+        if (!isPng(bytes)) return null;
         File f = fileFor(key);
         File parent = f.getParentFile();
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) return null;
-        File part = new File(parent, f.getName() + ".part");
-        try (FileOutputStream out = new FileOutputStream(part)) {
-            out.write(bytes);
+        File part;
+        try {
+            // A name of its own: two request threads may save the same tile at once.
+            part = File.createTempFile(f.getName(), ".part", parent);
+            try (FileOutputStream out = new FileOutputStream(part)) {
+                out.write(bytes);
+            }
         } catch (IOException e) {
-            part.delete();
             return null;
         }
         if (!part.renameTo(f)) {
@@ -77,14 +93,17 @@ final class TileCache {
         return f;
     }
 
-    /** Drops expired tiles, then the oldest until the cache is under maxBytes. Call off the UI thread. */
+    /**
+     * Drops tiles too old even as a stand-in, then the oldest until the cache
+     * is under maxBytes. Call off the UI thread.
+     */
     void prune(long now) {
         List<File> files = new ArrayList<>();
         collect(dir, files);
         long total = 0;
         List<File> kept = new ArrayList<>();
         for (File f : files) {
-            if (f.getName().endsWith(".part") || now - f.lastModified() >= maxAgeMs) {
+            if (f.getName().endsWith(".part") || now - f.lastModified() >= maxAgeMs * STALE_KEEP_FACTOR) {
                 f.delete();
                 continue;
             }

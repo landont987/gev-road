@@ -63,7 +63,9 @@ public class MainActivity extends Activity {
     // Map tiles kept on the unit (#51): a familiar route loads from disk and survives a hotspot drop.
     private static final long TILE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
     private static final long TILE_MAX_BYTES = 150L * 1024 * 1024;
-    private static final int TILE_TIMEOUT_MS = 15000;
+    // Short: the WebView may run these fetches one after another, so a stalled hotspot must not hold the page.
+    private static final int TILE_TIMEOUT_MS = 8000;
+    private static final long TILE_NETWORK_PAUSE_MS = 30000; // after a failed fetch, serve stale or hand over for this long
     private static final long GPS_INTERVAL_MS = 1000;
     // A saved fix older than this is not shown as the truck's position.
     private static final long LAST_FIX_MAX_AGE_MS = 30000;
@@ -74,6 +76,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private RadioDrawer radio;
     private TileCache tiles;
+    private volatile long tileNetworkPausedUntil = 0;
     private Speech speech;
     private Detector detector;
     // AndrOBD's engine data, passed to the page as it comes (see AndrobdPlugin).
@@ -577,14 +580,19 @@ public class MainActivity extends Activity {
         String key = TileCache.key(url.getPath());
         if (key == null) return null;
         try {
-            File cached = tiles.fresh(key, System.currentTimeMillis());
+            long now = System.currentTimeMillis();
+            File cached = tiles.fresh(key, now);
             if (cached != null) return tileFile(cached);
-            Map<String, String> headers = new LinkedHashMap<>();
-            headers.put("Accept", "image/png");
-            NativeHttp.BytesResult res = NativeHttp.requestBytes("GET", url.toString(), headers, null, TILE_TIMEOUT_MS);
-            if (res.status == 200 && res.body.length > 0) {
-                tiles.store(key, res.body);
-                return new WebResourceResponse("image/png", null, new ByteArrayInputStream(res.body));
+            if (now >= tileNetworkPausedUntil) {
+                Map<String, String> headers = new LinkedHashMap<>();
+                headers.put("Accept", "image/png");
+                NativeHttp.BytesResult res = NativeHttp.requestBytes("GET", url.toString(), headers, null, TILE_TIMEOUT_MS);
+                if (res.status == 200 && TileCache.isPng(res.body)) {
+                    tiles.store(key, res.body);
+                    return new WebResourceResponse("image/png", null, new ByteArrayInputStream(res.body));
+                }
+                // One failure pauses tile fetches for a while, so a dead hotspot cannot hold every tile for 8 s each.
+                if (res.status == 0) tileNetworkPausedUntil = System.currentTimeMillis() + TILE_NETWORK_PAUSE_MS;
             }
             File stale = tiles.any(key);
             if (stale != null) return tileFile(stale);
