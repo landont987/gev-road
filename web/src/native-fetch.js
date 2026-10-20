@@ -41,6 +41,12 @@ export function makeResponse(status, body, ageSeconds) {
   };
 }
 
+/** The computer preview (scripts/dev.mjs) relays az511.com, which sends no CORS header. */
+function previewUrl(url) {
+  const local = typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  return local && url.indexOf('https://az511.com/') === 0 ? `/az511/${url.slice('https://az511.com/'.length)}` : url;
+}
+
 export function hasNativeHttp() {
   return !!(window.GevNative && typeof window.GevNative.http === 'function');
 }
@@ -72,7 +78,7 @@ function viaApp(timeoutMs, start) {
 /** init: { method, headers: { Authorization, 'Content-Type' }, body } */
 export function nativeFetch(url, timeoutMs, init) {
   const options = init || {};
-  if (!hasNativeHttp()) return fetchWithTimeout(url, timeoutMs, options);
+  if (!hasNativeHttp()) return fetchWithTimeout(previewUrl(url), timeoutMs, options);
   const headers = options.headers || {};
   return viaApp(timeoutMs, (id) =>
     window.GevNative.http(

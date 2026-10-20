@@ -39,21 +39,23 @@ export function createCameras(map, app) {
     });
   }
 
+  // Only the list that matches the key is saved: a stand-in keyless copy is
+  // used for this run, and the AZ511 list is tried again on the next start.
   function fetchList() {
     const fetched = KEYS.az511
       ? nativeFetch(`${AZ511_API_CAMERAS_URL}${encodeURIComponent(KEYS.az511)}`, 30000)
           .then((res) => {
             if (!res.ok) throw new Error(`AZ511 camera list HTTP ${res.status}`);
-            return res.json().then((json) => parseAz511Api(json, AZ511_IMAGE_URL));
+            return res.json().then((json) => ({ cams: parseAz511Api(json, AZ511_IMAGE_URL), save: true }));
           })
           .catch((err) => {
             console.warn('cameras: AZ511 list failed, using the keyless copy:', err.message || err);
-            return fetchKeyless();
+            return fetchKeyless().then((cams) => ({ cams, save: false }));
           })
-      : fetchKeyless();
-    return fetched.then((cams) => {
+      : fetchKeyless().then((cams) => ({ cams, save: true }));
+    return fetched.then(({ cams, save }) => {
       if (cams.length === 0) throw new Error('camera list came back empty');
-      writeCache(CACHE_KEY, cams);
+      if (save) writeCache(CACHE_KEY, cams);
       return cams;
     });
   }
