@@ -203,7 +203,10 @@ export function createTruckCheck(deps) {
         const r = outcome.result;
         if (r && r.found && r.confidence !== 'low') {
           voice.sayIfOn(`Heads up. Your truck may be on the ${spokenPlace(cam.name)} camera.`);
-          showLast();
+          // A panel over the map needs a tap to close: while driving only a toast slides in,
+          // and the picture waits under VOICE → SHOW THE LAST CHECK.
+          if (app.isMoving()) toast(lastText(), 8000);
+          else showLast();
         } else if (r && !manual && !picture && arrivedAt !== null && stoppedSince === arrivedAt) {
           watchForNewer(cam, outcome.picture, arrivedAt);
         }

@@ -182,3 +182,31 @@ test('a manual check while waiting for the next picture ends the wait, so no pic
   await fixAt(1030000);
   assert.deepEqual(kinds(), ['picture', 'gemini', 'picture', 'gemini']);
 });
+
+test('a match found after the truck drove off speaks but opens no panel (nothing needs a tap while driving)', async () => {
+  let drivingNow = false;
+  check = createTruckCheck({
+    app: { isMoving: () => drivingNow, isLowData: () => false, isOnline: () => true },
+    cameras: { list: () => [CAM] },
+    voice: { sayIfOn: (text) => said.push(text) },
+    settings: { truckCheck: true },
+  });
+  pictures = [{ base64: picture('fresh'), age: 1 }];
+  geminiAnswers = [SEEN];
+  document.getElementById('sheet').hidden = true;
+  await fixAt(1000000);
+  drivingNow = true; // pulled away while Gemini was looking
+  await fixAt(1003000);
+  assert.equal(said.length, 1, 'the match is still spoken');
+  assert.equal(document.getElementById('sheet').hidden, true, 'no panel slides over the map while driving');
+});
+
+test('a match found while still stopped opens the result panel', async () => {
+  pictures = [{ base64: picture('fresh'), age: 1 }];
+  geminiAnswers = [SEEN];
+  document.getElementById('sheet').hidden = true;
+  await fixAt(1000000);
+  await fixAt(1003000);
+  assert.equal(said.length, 1);
+  assert.equal(document.getElementById('sheet').hidden, false);
+});
