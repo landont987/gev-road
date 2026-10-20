@@ -5,6 +5,11 @@ and `version` in `package.json`, so the ☰ menu's VERSION line tells builds apa
 Each version below has a git tag (`v0.3.9`, ...). APKs are never committed or
 uploaded: the API keys are built into them.
 
+## 0.3.11 (2026-10-20)
+Smoothness pass before the first head-unit test.
+- The map keeps DOM markers only for the dots on screen plus half a screen of margin (22 at drive zoom instead of about 1,070), so each GPS recenter moves far fewer elements on the head unit. Spoken alerts and the truck check still use the full lists.
+- The ☰ menu's DATA section shows memory: the unit's free memory, a low-memory warning from Android, and the app process. On Android 9 the map page runs in a WebView process the app cannot list, so the line says so.
+
 ## 0.3.10 (2026-10-20)
 Bug hunt fixes (details in docs/BUG-HUNT-2026-10-20.md).
 - Radio drawer: a Broadcastify feed opens on its player. The app banner is dismissed, and their sign-in box shows on screen. Broadcastify now needs a free sign-in to listen; sign in once in the drawer while parked. The sign-in is saved.
