@@ -5,6 +5,17 @@ and `version` in `package.json`, so the ☰ menu's VERSION line tells builds apa
 Each version below has a git tag (`v0.3.9`, ...). APKs are never committed or
 uploaded: the API keys are built into them.
 
+## 0.3.10 (2026-10-20)
+Bug hunt fixes (details in docs/BUG-HUNT-2026-10-20.md).
+- Radio drawer: a Broadcastify feed opens on its player. The app banner is dismissed, and their sign-in box shows on screen. Broadcastify now needs a free sign-in to listen; sign in once in the drawer while parked. The sign-in is saved.
+- Live calls: one request at a time (no double billing), no stale calls after switching packs, stop on a refused login or empty balance instead of retrying every 6 s, one error toast instead of one every 6 s, a stalled call is skipped.
+- AI truck check: Gemini first lists the vehicles without being told about the truck, so a white dump truck is no longer "your truck". A match after you drive off is a toast, not a panel. 45 s per answer.
+- Speed and red-light cameras refresh on the truck (overpass-api.de is TLS 1.3 only; now fetched by the app). Requests through the app use the page's timeout instead of always 20 s.
+- Road info cards for signs already behind you are dropped from the queue.
+- The camera picture stays when you start or stop moving.
+- Spoken road names: no more "comma P H X" or "202 dash LOOP".
+- The status card no longer slides under the turn bar, and open panels scroll above the radio drawer.
+
 ## 0.3.9 (2026-10-20)
 - Live radio calls now play. Four fixes: at most 5 talkgroups per Broadcastify request (presets are split), plain commas in the group list (`%2C` made Broadcastify answer 0 calls), the app's own page may start audio without a tap, and closing the web-feed drawer no longer switches live calls off.
 - Live calls start from the last 2 minutes instead of an old backlog.

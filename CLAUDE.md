@@ -35,7 +35,7 @@ later (see the "Go public" issue).
 - `CHANGELOG.md`: one entry per version.
 
 ## Build, test, install
-- Tests: `npm test` (node:test, 132 tests at 0.3.9) and `sh scripts/test-java.sh` (needs `JAVA_HOME=~/.local/jdk-17/Contents/Home`).
+- Tests: `npm test` (node:test, 165 tests at 0.3.10) and `sh scripts/test-java.sh` (needs `JAVA_HOME=~/.local/jdk-17/Contents/Home`).
 - Release APK: `node scripts/build-web.mjs --android && cd android && JAVA_HOME=~/.local/jdk-17/Contents/Home ~/.local/gradle-9.8.0/bin/gradle assembleRelease`, then copy to `~/Desktop/GEV-Road-<version>.apk` and move the previous one to the Trash.
 - Every build bumps the version in `android/app/build.gradle.kts` (versionCode + versionName) and in `package.json`, gets a `CHANGELOG.md` entry, and gets a git tag `v<version>`.
 - Browser preview: `node scripts/dev.mjs` (port 4180). It relays `/az511/` because az511.com sends no CORS header. Voice, GPS, USB and AndrOBD don't exist in a browser.
@@ -54,6 +54,9 @@ later (see the "Go public" issue).
 ## Proven facts (each one cost time)
 - **WebView 66:** big GPU canvases never show, so map dots are DOM markers (`dots.js`).
 - **TLS 1.3:** every free routing server is TLS 1.3 only, and Android 9 can't do it. `NativeHttp` uses Conscrypt plus the ISRG X2 root.
+- **overpass-api.de** is TLS 1.3 only too (2026-10-20), answers 406 to browser user agents and can take 30+ s: it goes through `NativeHttp`.
+- **Broadcastify feeds need a free sign-in** (2026-10-20): the player's session POST answers 401 "auth" for guests. Their sign-in box uses CSS `inset`, which WebView 66 ignores; `RadioDrawer` pins it.
+- **Gemini truck check:** told what truck to look for, Gemini "finds" it in other vehicles. It lists vehicles neutrally first; see `truck-check-logic.js`.
 - **Tiles:** CARTO dark tiles answer 200 with an "API KEY REQUIRED" image. Look at tiles; never trust the status code alone.
 - **az511.com and CORS:** the API sends no CORS header. Lists go through `nativeFetch` (Android); pictures load in a plain `<img>`. The closures feed is 2.4 MB (280 KB gzipped), so the `NativeHttp` body cap is 4 MB. Rate limit: 10 calls a minute.
 - **AZ511 robots.txt** blocks `/list/getdata/` and `/map/map*/`: never scrape them.
