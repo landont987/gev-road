@@ -27,6 +27,7 @@ export function createCameras(map, app) {
   let picture = null; // <img> currently loading or shown
   let pictureTimer = null;
   let pictureBox = null;
+  let pictureLowData = null; // the LOW DATA state the open picture box was drawn for
 
   // With your AZ511 key the list is ADOT's own and up to date; without it,
   // the AZGeo copy (last edited 2026-03-16) still works with no key at all.
@@ -144,7 +145,8 @@ export function createCameras(map, app) {
     if (!pictureBox) return;
     stopPicture();
     pictureBox.textContent = '';
-    if (app.isLowData()) {
+    pictureLowData = app.isLowData();
+    if (pictureLowData) {
       pictureBox.appendChild(el('div', { class: 'note' }, 'Low data is on, so pictures are off to save your hotspot.'));
     } else if (autoLoad) {
       loadPicture(cam);
@@ -188,9 +190,12 @@ export function createCameras(map, app) {
       load(false);
       return all;
     },
-    /** Moving or low data changed: hide a picture that is no longer allowed. */
+    /**
+     * Moving or low data changed. Pictures load while moving too (since 0.3.3),
+     * so only a LOW DATA switch redraws: starting or stopping keeps the picture.
+     */
     refresh() {
-      if (current && openSheetKind() === 'camera') renderPicture(current, false);
+      if (current && openSheetKind() === 'camera' && app.isLowData() !== pictureLowData) renderPicture(current, false);
     },
   };
 }
