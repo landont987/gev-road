@@ -129,7 +129,7 @@ public class MainActivity extends Activity {
                 .build();
 
         // Debug builds only: lets Chrome DevTools inspect the page over adb.
-        if (BuildConfig.DEBUG || true) WebView.setWebContentsDebuggingEnabled(true); // TEMP bug hunt: revert before the real build
+        if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true);
         web = new WebView(this);
         WebSettings settings = web.getSettings();
         // Our own page only: live calls start a few seconds after the tap, when
