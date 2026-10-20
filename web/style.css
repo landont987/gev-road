@@ -453,6 +453,10 @@ body.drive #status .speed {
 #toast {
   bottom: calc(110px + var(--drawer));
 }
+/* The drawer covers the bottom of an open panel: room to scroll its last rows above it. */
+#sheet {
+  padding-bottom: calc(24px + var(--drawer));
+}
 
 /* VOICE panel: voice and accent choices wrap in rows (no flex gap on the old WebView). */
 .choices {
