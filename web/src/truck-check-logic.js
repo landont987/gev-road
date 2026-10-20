@@ -154,7 +154,10 @@ function readError(bodyText) {
  * this picture or this moment.
  */
 export function isPermanentApiError(status, bodyText) {
-  if (status === 401 || status === 403 || status === 404) return true;
+  if (status === 401 || status === 404) return true;
+  // A 403 with a reason (API switched off, key blocked) stays; a bare
+  // PERMISSION_DENIED came and went on a brand-new key (10/20: 1 in 4 calls).
+  if (status === 403) return !!errorReason(readError(bodyText).json);
   if (status !== 400) return false;
   const e = readError(bodyText);
   return errorReason(e.json) === 'API_KEY_INVALID' || e.status === 'FAILED_PRECONDITION';
@@ -164,6 +167,7 @@ export function isPermanentApiError(status, bodyText) {
 export function apiErrorText(status, bodyText) {
   const e = readError(bodyText);
   if (errorReason(e.json) === 'API_KEY_INVALID' || status === 401) return 'Google refused the key. Check "gemini" in keys.local.json.';
+  if (status === 403 && !errorReason(e.json)) return 'Google said no this time. A new key can take a few minutes to switch on; it tries again at the next stop.';
   if (status === 403) return 'Google refused the key for Gemini. Make the key again in Google AI Studio.';
   if (status === 429) return "Gemini's free limit is used up for now. It tries again later.";
   return `Gemini answered HTTP ${status}${e.message ? `: ${e.message.slice(0, 120)}` : ''}.`;

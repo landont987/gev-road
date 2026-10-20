@@ -159,14 +159,22 @@ const BAD_KEY =
 
 test('apiErrorText explains the usual Gemini failures plainly', () => {
   assert.match(apiErrorText(400, BAD_KEY), /Google refused the key\. Check "gemini"/);
-  assert.match(apiErrorText(403, '{"error":{"code":403,"status":"PERMISSION_DENIED","message":"denied"}}'), /AI Studio/);
+  assert.match(apiErrorText(403, '{"error":{"code":403,"status":"PERMISSION_DENIED","message":"denied"}}'), /tries again at the next stop/);
+  assert.match(
+    apiErrorText(403, '{"error":{"code":403,"status":"PERMISSION_DENIED","details":[{"reason":"API_KEY_SERVICE_BLOCKED"}]}}'),
+    /AI Studio/,
+  );
   assert.match(apiErrorText(429, '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"quota"}}'), /free limit is used up/);
   assert.equal(apiErrorText(500, 'not json'), 'Gemini answered HTTP 500.');
   assert.equal(apiErrorText(400, '{"error":{"code":400,"message":"Unable to process input image.","status":"INVALID_ARGUMENT"}}'), 'Gemini answered HTTP 400: Unable to process input image..');
 });
 
 test('isPermanentApiError stops retries only for errors a retry cannot fix', () => {
-  for (const s of [401, 403, 404]) assert.equal(isPermanentApiError(s, ''), true, String(s));
+  for (const s of [401, 404]) assert.equal(isPermanentApiError(s, ''), true, String(s));
+  const bare403 = '{"error":{"code":403,"message":"The caller does not have permission","status":"PERMISSION_DENIED"}}';
+  assert.equal(isPermanentApiError(403, bare403), false, 'a bare 403 came and went on a new key');
+  const off = '{"error":{"code":403,"status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"SERVICE_DISABLED"}]}}';
+  assert.equal(isPermanentApiError(403, off), true, 'the API is switched off');
   assert.equal(isPermanentApiError(400, BAD_KEY), true, 'a made-up key');
   const notHere = '{"error":{"code":400,"message":"User location is not supported for the API use.","status":"FAILED_PRECONDITION"}}';
   assert.equal(isPermanentApiError(400, notHere), true, 'Gemini not offered here');
