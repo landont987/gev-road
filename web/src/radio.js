@@ -399,7 +399,8 @@ export function createRadio(app) {
         'p',
         { class: 'sheet-sub' },
         native
-          ? 'Opens the feed page in the radio drawer. Press play on it; it keeps playing while you drive.'
+          ? 'Opens the feed page in the radio drawer. Press play on it; it keeps playing while you drive. ' +
+            'Broadcastify asks you to sign in once (a free account; your live-calls login works). Do it parked.'
           : 'Opens the feed page in a new tab (on the truck it opens in the radio drawer).',
       ),
     );
