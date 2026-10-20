@@ -66,6 +66,7 @@ later (see the "Go public" issue).
   - `init=1` returns about 25 old calls.
   - The page's own WebView must allow audio without a tap (`setMediaPlaybackRequiresUserGesture(false)`, `MainActivity` only).
   - Broadcastify terms: never relay or embed their web-feed audio. Those pages open in `RadioDrawer`.
+  - **Broadcastify Terms section 9 (revised 2026-07-22, read 2026-10-20):** no scripts, bots or automated access to feeds, including scripted sign-in, reconnection or polling, outside the Developer Program (bcfy.io, which the live calls use with the app's keys). So the drawer's web-feed sign-in stays a human tap: never auto-fill or auto-submit their login form. The same section bans AI/ML use of their audio (transcription, alerting, LLM processing): never add that. Their login form has no remember-me box; the session lasts as long as their cookie does, which `RadioDrawer.pause` flushes to disk.
 - **Gemini:**
   - New Google keys look like `AQ.` + 50 characters.
   - A brand-new key answers a bare 403 about 1 call in 4 for a few minutes.
