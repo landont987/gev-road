@@ -9,7 +9,8 @@ drops the 3D globe, which is too heavy for the unit.
 
 - **Follow my truck:** the map stays centered on the truck's GPS, arrow points the way you drive. Drag the map to look around, tap RECENTER to come back.
 - **Directions:** search a place or press and hold the map, then follow the turn bar. Re-routes when you leave the line.
-- **Arizona cameras:** about 600 ADOT highway cameras. Tap one for a still picture, only while stopped.
+- **Arizona cameras:** 644 ADOT highway cameras with your AZ511 key (604 on the keyless list). Tap one for a still picture, moving or stopped (off in low data mode).
+- **Road info pop-ups (AZ511 key):** closures, crashes, overhead highway sign messages, road weather stations and rest areas. A card slides in by itself as you get close on your side of the road, so nothing needs a tap while driving; only active closures, crashes and high wind speak. Closures follow their weekly schedule, so a "Fri 9 PM to Mon 5 AM" closure stays quiet on a Monday.
 - **Plate readers:** license plate reader locations mapped by OpenStreetMap volunteers.
 - **Traffic:** live congestion colors (needs a free TomTom key).
 - **Low data:** turns off traffic and camera pictures and stops the map zooming past street level, to save the hotspot. A banner suggests it after 100 MB.
@@ -37,6 +38,7 @@ drops the 3D globe, which is too heavy for the unit.
 | Search | Photon at `photon.komoot.io` | none |
 | Traffic | TomTom flow tiles | free key, not yet verified |
 | Cameras (fresh list) | AZ511 API `api/v2/get/cameras` | free AZ511 developer key, 10 calls a minute |
+| Road info | AZ511 API `event`, `messagesigns`, `weatherstations`, `restareas` (no CORS header, so the Android app fetches them; the closures list is about 2.4 MB, 280 KB gzipped) | same AZ511 key |
 | Live calls | Broadcastify Calls Client API `api.bcfy.io` | app key id, secret and app id from bcfy.io/dev (prepaid, from $5) plus a Broadcastify login |
 | Public feeds | Broadcastify feed pages and OpenMHz system pages, opened as-is | none |
 | County feed list | Broadcastify county pages, opened as-is; county from `geo.fcc.gov/api/census/area` | none |
