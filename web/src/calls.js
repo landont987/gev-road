@@ -67,10 +67,38 @@ export function newCalls(answer, seen) {
  * callbacks: { onStatus(text), onCall(call), onError(message) }
  * login: { username, password } typed by the driver (stored only on the unit).
  */
+// The live endpoint takes at most 5 groups per request ("Too many groups
+// (limit 5)", HTTP 500) and wants plain commas: with %2C it reads the list as
+// one unknown group and answers 200 with no calls (both checked 10/20).
+export const MAX_GROUPS_PER_REQUEST = 5;
+
+/** groups -> [{ groups, pos }] chunks of at most 5, each polled on its own. */
+export function groupChunks(groupIds) {
+  const chunks = [];
+  for (let i = 0; i < groupIds.length; i += MAX_GROUPS_PER_REQUEST) {
+    chunks.push({ groups: groupIds.slice(i, i + MAX_GROUPS_PER_REQUEST), pos: 0 });
+  }
+  return chunks;
+}
+
+const START_WINDOW_S = 120;
+
+/** The first answer (init=1) brings the last ~25 calls, some many minutes old: start from the last 2 minutes. */
+export function recentOnly(calls, serverTime) {
+  const now = Number(serverTime);
+  if (!Number.isFinite(now) || now <= 0) return calls;
+  return calls.filter((c) => c.ts >= now - START_WINDOW_S);
+}
+
+/** The query for one chunk: plain commas between ids, each id encoded on its own. */
+export function liveQuery(chunk) {
+  const groups = chunk.groups.map(encodeURIComponent).join(',');
+  return `groups=${groups}&${chunk.pos ? `pos=${chunk.pos}` : 'init=1'}`;
+}
+
 export function createCallsPlayer(callbacks) {
   let session = null; // { uid, token, exp }
-  let groups = [];
-  let pos = 0;
+  let chunks = []; // [{ groups, pos }], at most 5 groups each
   let seen = {};
   let queue = [];
   let audio = null;
@@ -97,10 +125,13 @@ export function createCallsPlayer(callbacks) {
 
   async function poll() {
     await authenticate();
+    for (const chunk of chunks) await pollChunk(chunk);
+  }
+
+  async function pollChunk(chunk) {
     const now = Math.floor(Date.now() / 1000);
     const token = await signToken(KEYS, { sub: Number(session.uid), utk: session.token }, now);
-    const query = pos ? `pos=${pos}` : 'init=1';
-    const res = await nativeFetch(`${BCFY_LIVE_URL}?groups=${encodeURIComponent(groups.join(','))}&${query}`, 20000, {
+    const res = await nativeFetch(`${BCFY_LIVE_URL}?${liveQuery(chunk)}`, 20000, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.status === 402) throw new Error('Broadcastify prepaid balance is empty. Top up at bcfy.io/dev.');
@@ -111,10 +142,12 @@ export function createCallsPlayer(callbacks) {
     if (res.status === 429) return; // rate limited: skip this round
     if (!res.ok) throw new Error(`Calls API answered HTTP ${res.status}.`);
     const answer = await res.json();
-    if (Number.isFinite(Number(answer.lastPos))) pos = Number(answer.lastPos);
-    const fresh = newCalls(answer, seen);
+    const first = !chunk.pos;
+    if (Number.isFinite(Number(answer.lastPos))) chunk.pos = Number(answer.lastPos);
+    const fresh = first ? recentOnly(newCalls(answer, seen), answer.serverTime) : newCalls(answer, seen);
     for (const call of fresh) seen[call.key] = true;
-    queue = queue.concat(fresh).slice(-MAX_QUEUE);
+    // Two requests (a preset over 5 groups) can each bring calls: keep them in time order.
+    queue = queue.concat(fresh).sort((a, b) => a.ts - b.ts).slice(-MAX_QUEUE);
     callbacks.onStatus(queue.length ? `${queue.length} waiting` : 'listening');
     playNext();
   }
@@ -142,10 +175,9 @@ export function createCallsPlayer(callbacks) {
   return {
     start(groupIds, credentials) {
       this.stop();
-      groups = groupIds.slice();
+      chunks = groupChunks(groupIds);
       login = credentials;
       running = true;
-      pos = 0;
       seen = {};
       queue = [];
       audio = new Audio();

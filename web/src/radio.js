@@ -157,8 +157,11 @@ export function createRadio(app) {
   };
 
   // The drawer's own STOP button (Android) ends the feed without the page asking.
+  // Only a drawer feed is ended here: starting live calls, a station or my
+  // scanner closes the drawer too, and its "closed" arrives after they start.
+  const playsInPage = (id) => id === 'mine' || id === 'calls' || id.indexOf('station:') === 0;
   window.gevOnRadioClosed = () => {
-    if (playingId && playingId !== 'mine') {
+    if (playingId && !playsInPage(playingId)) {
       playingId = '';
       announce();
     }

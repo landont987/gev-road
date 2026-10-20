@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto, createHmac } from 'node:crypto';
 
-import { signToken, newCalls } from '../web/src/calls.js';
+import { signToken, newCalls, groupChunks, liveQuery, recentOnly } from '../web/src/calls.js';
 import { CALL_GROUPS, CALL_PACKS } from '../web/src/calls-groups.js';
 
 const KEYS = { bcfyKeyId: 'kid-123', bcfySecret: 'shh-secret', bcfyAppId: 'gev-road' };
@@ -73,4 +73,22 @@ test('a native answer behaves like the bit of fetch the player uses', async () =
   assert.equal(bad.ok, false);
   assert.equal(bad.status, 401);
   assert.equal(await makeResponse(0, null).text(), '');
+});
+
+test('presets over 5 groups are split, each request keeps its own position', () => {
+  const ids = ['2508-1', '2508-2', '2508-3', '2508-4', '2508-5', '2508-6', '2508-7'];
+  const chunks = groupChunks(ids);
+  assert.deepEqual(chunks.map((c) => c.groups.length), [5, 2]);
+  assert.equal(chunks[0].pos, 0);
+});
+
+test('the live query uses plain commas (Broadcastify reads %2C as one unknown group)', () => {
+  assert.equal(liveQuery({ groups: ['2508-2811', '2508-2993'], pos: 0 }), 'groups=2508-2811,2508-2993&init=1');
+  assert.equal(liveQuery({ groups: ['2508-2811'], pos: 1792483499 }), 'groups=2508-2811&pos=1792483499');
+});
+
+test('the first answer starts from the last 2 minutes', () => {
+  const calls = [{ ts: 1000 }, { ts: 1890 }, { ts: 1990 }];
+  assert.deepEqual(recentOnly(calls, 2000).map((c) => c.ts), [1890, 1990]);
+  assert.equal(recentOnly(calls, undefined).length, 3, 'no server time: keep them all');
 });

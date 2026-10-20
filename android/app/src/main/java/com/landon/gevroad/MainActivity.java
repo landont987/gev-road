@@ -132,6 +132,10 @@ public class MainActivity extends Activity {
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true);
         web = new WebView(this);
         WebSettings settings = web.getSettings();
+        // Our own page only: live calls start a few seconds after the tap, when
+        // each call arrives, which a "tap first" rule blocks. The drawer of
+        // outside pages (RadioDrawer) still needs a tap.
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
