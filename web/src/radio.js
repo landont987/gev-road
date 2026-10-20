@@ -77,8 +77,10 @@ export function createRadio(app) {
       callsNow = call;
       renderCallsLine();
     },
-    onError(message) {
+    onError(message, fatal) {
       callsStatus = message;
+      // A refused login or an empty balance stopped the player: the RADIO button goes dark.
+      if (fatal) stopCalls();
       renderCallsLine();
       toast(message, 6000);
     },

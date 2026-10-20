@@ -64,7 +64,8 @@ export function newCalls(answer, seen) {
 }
 
 /**
- * callbacks: { onStatus(text), onCall(call), onError(message) }
+ * callbacks: { onStatus(text), onCall(call), onError(message, fatal) }; with
+ * fatal the player has stopped (a refused login, an empty balance).
  * login: { username, password } typed by the driver (stored only on the unit).
  */
 // The live endpoint takes at most 5 groups per request ("Too many groups
@@ -96,6 +97,17 @@ export function liveQuery(chunk) {
   return `groups=${groups}&${chunk.pos ? `pos=${chunk.pos}` : 'init=1'}`;
 }
 
+// A call's audio that neither ends nor fails this long after its own length
+// (a hotspot stall mid-file) is skipped, so the calls behind it still play.
+const STALL_MARGIN_MS = 15000;
+
+/** An error retrying cannot fix: the player stops instead of asking again every few seconds. */
+function fatal(message) {
+  const err = new Error(message);
+  err.fatal = true;
+  return err;
+}
+
 export function createCallsPlayer(callbacks) {
   let session = null; // { uid, token, exp }
   let chunks = []; // [{ groups, pos }], at most 5 groups each
@@ -103,10 +115,14 @@ export function createCallsPlayer(callbacks) {
   let queue = [];
   let audio = null;
   let timer = null;
+  let stallTimer = null;
   let running = false;
   let login = null;
+  let polling = false; // a poll is out: the next one waits (every live request is billed)
+  let generation = 0; // bumped by start and stop: answers for an older run are dropped
+  let lastError = ''; // a passing error is reported once, until a poll works again
 
-  async function authenticate() {
+  async function authenticate(mine) {
     const now = Math.floor(Date.now() / 1000);
     if (session && session.exp > now + 60) return;
     const appToken = await signToken(KEYS, {}, now);
@@ -116,25 +132,31 @@ export function createCallsPlayer(callbacks) {
       headers: { Authorization: `Bearer ${appToken}`, 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
     });
-    if (res.status === 401) throw new Error('Broadcastify did not accept the key or the login.');
+    if (res.status === 401) throw fatal('Broadcastify did not accept the key or the login.');
     if (!res.ok) throw new Error(`Broadcastify login answered HTTP ${res.status}.`);
     const data = await res.json();
     if (!data || !data.uid || !data.token) throw new Error('Broadcastify login answer had no session.');
+    if (mine !== generation) return;
     session = { uid: data.uid, token: data.token, exp: Number(data.exp) || now + BCFY_TOKEN_TTL_S - 100 };
   }
 
-  async function poll() {
-    await authenticate();
-    for (const chunk of chunks) await pollChunk(chunk);
+  async function poll(mine) {
+    await authenticate(mine);
+    const mineChunks = chunks;
+    for (const chunk of mineChunks) {
+      if (mine !== generation) return;
+      await pollChunk(chunk, mine);
+    }
   }
 
-  async function pollChunk(chunk) {
+  async function pollChunk(chunk, mine) {
     const now = Math.floor(Date.now() / 1000);
     const token = await signToken(KEYS, { sub: Number(session.uid), utk: session.token }, now);
     const res = await nativeFetch(`${BCFY_LIVE_URL}?${liveQuery(chunk)}`, 20000, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.status === 402) throw new Error('Broadcastify prepaid balance is empty. Top up at bcfy.io/dev.');
+    if (mine !== generation) return; // stopped, or another pack started, while this was out
+    if (res.status === 402) throw fatal('Broadcastify prepaid balance is empty. Top up at bcfy.io/dev.');
     if (res.status === 401) {
       session = null;
       throw new Error('Broadcastify session expired; signing in again.');
@@ -142,6 +164,7 @@ export function createCallsPlayer(callbacks) {
     if (res.status === 429) return; // rate limited: skip this round
     if (!res.ok) throw new Error(`Calls API answered HTTP ${res.status}.`);
     const answer = await res.json();
+    if (mine !== generation) return;
     const first = !chunk.pos;
     if (Number.isFinite(Number(answer.lastPos))) chunk.pos = Number(answer.lastPos);
     const fresh = first ? recentOnly(newCalls(answer, seen), answer.serverTime) : newCalls(answer, seen);
@@ -159,23 +182,75 @@ export function createCallsPlayer(callbacks) {
     if (!call) return;
     callbacks.onCall(call);
     audio.src = call.url;
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      console.warn('calls: a call stalled, skipping it');
+      if (!audio) return;
+      audio.pause();
+      playNext();
+    }, call.duration * 1000 + STALL_MARGIN_MS);
     audio.play().catch((err) => {
       console.warn('calls play:', err);
       playNext();
     });
   }
 
+  function callDone() {
+    clearTimeout(stallTimer);
+    playNext();
+  }
+
   function tick() {
-    poll().catch((err) => {
-      console.warn('calls:', err);
-      callbacks.onError(err.message || 'The Calls API did not answer.');
-    });
+    if (polling) return;
+    polling = true;
+    const mine = generation;
+    poll(mine)
+      .then(
+        () => {
+          if (mine === generation) lastError = '';
+        },
+        (err) => {
+          if (mine !== generation) return;
+          console.warn('calls:', err);
+          const message = err.message || 'The Calls API did not answer.';
+          if (err.fatal) {
+            stopPlayer();
+            callbacks.onError(message, true);
+            return;
+          }
+          if (message !== lastError) callbacks.onError(message, false);
+          lastError = message;
+        },
+      )
+      .then(() => {
+        if (mine === generation) polling = false;
+      });
+  }
+
+  function stopPlayer() {
+    generation++;
+    running = false;
+    polling = false;
+    lastError = '';
+    clearInterval(timer);
+    timer = null;
+    clearTimeout(stallTimer);
+    queue = [];
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      audio = null;
+    }
   }
 
   return {
     start(groupIds, credentials) {
-      this.stop();
+      stopPlayer();
       chunks = groupChunks(groupIds);
+      if (!login || login.username !== credentials.username || login.password !== credentials.password) session = null;
       login = credentials;
       running = true;
       seen = {};
@@ -183,29 +258,16 @@ export function createCallsPlayer(callbacks) {
       audio = new Audio();
       trackPlayer(audio);
       audio.preload = 'auto';
-      audio.onended = playNext;
+      audio.onended = callDone;
       audio.onerror = () => {
-        console.warn('calls: audio failed', audio.src);
-        playNext();
+        console.warn('calls: audio failed', audio && audio.src);
+        callDone();
       };
       callbacks.onStatus('signing in');
       tick();
       timer = setInterval(tick, BCFY_POLL_MS);
     },
-    stop() {
-      running = false;
-      clearInterval(timer);
-      timer = null;
-      queue = [];
-      if (audio) {
-        audio.onended = null;
-        audio.onerror = null;
-        audio.pause();
-        audio.removeAttribute('src');
-        audio.load();
-        audio = null;
-      }
-    },
+    stop: stopPlayer,
     isRunning: () => running,
   };
 }
