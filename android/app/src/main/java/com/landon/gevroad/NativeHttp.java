@@ -76,6 +76,7 @@ final class NativeHttp {
 
     private static Context appContext;
     private static OkHttpClient client;
+    private static final Map<Integer, OkHttpClient> clientsByTimeout = new LinkedHashMap<>();
 
     /** Status and body of a finished request; status 0 means it never reached the server. */
     static final class Result {
@@ -206,15 +207,20 @@ final class NativeHttp {
     }
 
     /** The shared client, or a copy with longer timeouts (an AI answer can take a while). */
-    private static OkHttpClient client(int timeoutMs) throws GeneralSecurityException, IOException {
+    private static synchronized OkHttpClient client(int timeoutMs) throws GeneralSecurityException, IOException {
         int ms = Math.max(1000, Math.min(MAX_TIMEOUT_MS, timeoutMs));
         if (ms == TIMEOUT_MS) return client();
-        return client().newBuilder()
+        OkHttpClient made = clientsByTimeout.get(ms);
+        if (made != null) return made;
+        // A handful of timeouts exist (tiles, AI answers, feeds): keep one client each, not one per request.
+        made = client().newBuilder()
                 .connectTimeout(Math.min(ms, TIMEOUT_MS), TimeUnit.MILLISECONDS)
                 .readTimeout(ms, TimeUnit.MILLISECONDS)
                 .writeTimeout(ms, TimeUnit.MILLISECONDS)
                 .callTimeout(ms, TimeUnit.MILLISECONDS)
                 .build();
+        clientsByTimeout.put(ms, made);
+        return made;
     }
 
     private static synchronized OkHttpClient client() throws GeneralSecurityException, IOException {

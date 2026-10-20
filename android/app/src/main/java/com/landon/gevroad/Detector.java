@@ -58,6 +58,7 @@ final class Detector {
     private static final int MAX_LINE_BYTES = 2048; // the board's lines are about 300 bytes
     private static final int FULL_SPEED_PACKET_BYTES = 64; // if the endpoint does not say
     private static final long CLAIM_RETRY_MS = 600; // a screen being rebuilt may still hold the board
+    private static final int CLAIM_TRIES = 5; // 3 s in all: a loaded unit can be slow to let go (#58)
     private static final int READ_TIMEOUT_MS = 500;
     private static final int CONTROL_TIMEOUT_MS = 1000;
     private static final long QUICK_FAIL_MS = 50; // a read failing this fast did not wait for data
@@ -119,7 +120,7 @@ final class Detector {
             if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
                 useBoard(device);
             } else if (ACTION_PERMISSION.equals(action)) {
-                if (usb.hasPermission(device)) open(device, false);
+                if (usb.hasPermission(device)) open(device, 0);
                 else setState(NEEDS_PERMISSION, "Permission was not given. Park and tap CONNECT to ask again.");
             }
         }
@@ -165,7 +166,7 @@ final class Detector {
             return;
         }
         if (usb.hasPermission(board)) {
-            open(board, false);
+            open(board, 0);
             return;
         }
         Intent answer = new Intent(ACTION_PERMISSION).setPackage(context.getPackageName());
@@ -216,7 +217,7 @@ final class Detector {
     }
 
     private void useBoard(UsbDevice device) {
-        if (usb.hasPermission(device)) open(device, false);
+        if (usb.hasPermission(device)) open(device, 0);
         else setState(NEEDS_PERMISSION, "");
     }
 
@@ -272,7 +273,7 @@ final class Detector {
     }
 
     /** Start reading a board Android allows. retried: this is the one retry after a failed claim. */
-    private void open(UsbDevice device, boolean retried) {
+    private void open(UsbDevice device, int attempt) {
         if (reader != null) {
             // One board at a time: tapping CONNECT again only refreshes the status.
             if (reader.device.getDeviceName().equals(device.getDeviceName())) setState(LISTENING, "");
@@ -294,11 +295,12 @@ final class Detector {
         }
         if (!connection.claimInterface(data, true)) {
             connection.close();
-            if (!retried) {
-                // After a screen rebuild the old reading thread lets go within half a second.
+            if (attempt + 1 < CLAIM_TRIES) {
+                // After a screen rebuild the old reading thread usually lets go within half a
+                // second; a loaded unit can take longer, so keep trying for a few seconds (#58).
                 main.postDelayed(() -> {
                     if (started && reader == null && isUsableBoard(usb.getDeviceList().get(device.getDeviceName()))) {
-                        open(device, true);
+                        open(device, attempt + 1);
                     }
                 }, CLAIM_RETRY_MS);
                 return;

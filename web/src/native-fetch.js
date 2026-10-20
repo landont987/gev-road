@@ -11,13 +11,35 @@ import { fetchWithTimeout } from './ui.js';
 const pending = {};
 let nextId = 1;
 
-/** Called by the Android app: status 0 means the request never got through; ageSeconds is -1 when unknown. */
-function onNativeAnswer(id, status, body, ageSeconds) {
+const PULL_TIMEOUT_MS = 30000; // reading a kept answer from the app, off the UI thread
+
+/**
+ * Called by the Android app: status 0 means the request never got through;
+ * ageSeconds is -1 when unknown. With pull set, the app kept a big body (the
+ * 2.4 MB closures feed) for the page to fetch from /native/http/<id>, so it
+ * never travels as a script literal (#59).
+ */
+function onNativeAnswer(id, status, body, ageSeconds, pull) {
   const entry = pending[id];
   if (!entry) return;
   delete pending[id];
   clearTimeout(entry.timer);
-  entry.resolve(makeResponse(status, body, ageSeconds), body);
+  if (!pull) {
+    entry.resolve(makeResponse(status, body, ageSeconds), body);
+    return;
+  }
+  fetchWithTimeout(`/native/http/${id}`, PULL_TIMEOUT_MS)
+    .then((res) => {
+      if (!res.ok) throw new Error(`kept answer ${id} answered HTTP ${res.status}`);
+      return res.text();
+    })
+    .then(
+      (text) => entry.resolve(makeResponse(status, text, ageSeconds), text),
+      (err) => {
+        console.warn('native answer:', err);
+        entry.resolve(makeResponse(0, 'app error: the answer was lost'), 'app error: the answer was lost');
+      },
+    );
 }
 
 /** Why a status-0 answer never reached the server, in plain words. */

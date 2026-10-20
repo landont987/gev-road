@@ -51,7 +51,7 @@ final class RadioDrawer {
      * top/right/bottom/left 0 (what `inset: 0` means) when it opens.
      * It only scrolls and dismisses: the audio stays in their player.
      */
-    static final String SHOW_PLAYER_JS = "(function(){var tries=0;"
+    static final String SHOW_PLAYER_JS = "(function(){if(window.__gevPlayer)return;window.__gevPlayer=1;var tries=0;"
             + "setInterval(function(){var a=document.getElementById('lp-auth-modal');"
             + "if(a&&!a.hidden&&a.style.top!=='0px'){a.style.top='0';a.style.right='0';a.style.bottom='0';a.style.left='0';}},500);"
             + "function go(){"
@@ -109,11 +109,11 @@ final class RadioDrawer {
         bar.addView(stop);
 
         root.addView(bar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(BAR_DP)));
-
-        web = createWeb();
+        // The WebView is built on the first open and destroyed on STOP (#60): a drawer
+        // nobody opened costs nothing, and a stopped one gives its memory back.
     }
 
-    /** The scanner page's WebView. Built again after its renderer dies. */
+    /** The scanner page's WebView, built on open. */
     private WebView createWeb() {
         WebView view = new WebView(activity);
         WebSettings settings = view.getSettings();
@@ -145,10 +145,17 @@ final class RadioDrawer {
 
             @Override
             public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) {
-                // Low memory killed the renderer. Without this the whole app would die;
-                // instead the drawer closes and gets a fresh WebView for next time.
+                // Low memory killed the renderer, which the map page shares. Without this the
+                // whole app would die; instead the drawer drops its WebView (a new one is built
+                // on the next open). The page callbacks are posted, so the activity's own
+                // handler runs first and the dead map WebView is never called.
                 Log.w(TAG, "Radio renderer gone, crashed=" + detail.didCrash());
-                replaceWeb();
+                dropWeb();
+                root.setVisibility(View.GONE);
+                root.post(() -> {
+                    report(0);
+                    if (onClosed != null) onClosed.run();
+                });
                 return true;
             }
         });
@@ -156,13 +163,11 @@ final class RadioDrawer {
         return view;
     }
 
-    private void replaceWeb() {
+    private void dropWeb() {
+        if (web == null) return;
         root.removeView(web);
         web.destroy();
-        web = createWeb();
-        root.setVisibility(View.GONE);
-        report(0);
-        if (onClosed != null) onClosed.run();
+        web = null;
     }
 
     /** The view to add to the activity's layout, docked at the bottom. */
@@ -195,13 +200,14 @@ final class RadioDrawer {
             return;
         }
         title.setText(name);
+        if (web == null) web = createWeb();
         setFolded(false);
         root.setVisibility(View.VISIBLE);
         web.loadUrl(url);
     }
 
     void close() {
-        web.loadUrl(BLANK);
+        dropWeb(); // their page and its caches go with it; the sign-in cookie stays (CookieManager)
         root.setVisibility(View.GONE);
         report(0);
         if (onClosed != null) onClosed.run();
@@ -218,13 +224,12 @@ final class RadioDrawer {
     }
 
     void destroy() {
-        root.removeView(web);
-        web.destroy();
+        dropWeb();
     }
 
     private void setFolded(boolean fold) {
         folded = fold;
-        web.setVisibility(fold ? View.GONE : View.VISIBLE);
+        if (web != null) web.setVisibility(fold ? View.GONE : View.VISIBLE);
         hideButton.setText(fold ? "SHOW" : "HIDE");
         // Folded: the drawer is just its bar, so the map gets the room back.
         int height = fold ? dp(BAR_DP) : openHeight();
@@ -249,7 +254,7 @@ final class RadioDrawer {
     }
 
     private void openInBrowser() {
-        String url = web.getUrl();
+        String url = web == null ? null : web.getUrl();
         if (url == null || BLANK.equals(url)) return;
         openExternal(Uri.parse(url));
     }
