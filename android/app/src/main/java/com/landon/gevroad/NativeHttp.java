@@ -69,7 +69,7 @@ final class NativeHttp {
     /** The only request headers the page may set (lower case). */
     private static final Set<String> HEADERS = new HashSet<>(Arrays.asList(
             "authorization", "x-goog-api-key", "content-type", "accept"));
-    private static final int MAX_BODY = 2 * 1024 * 1024;
+    private static final int MAX_BODY = 4 * 1024 * 1024; // AZ511 closures: about 2.4 MB unzipped
 
     private static Context appContext;
     private static OkHttpClient client;

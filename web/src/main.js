@@ -31,6 +31,7 @@ import { createDetector } from './detector.js';
 import { openDetectorPanel } from './detector-panel.js';
 import { createEngine } from './engine.js';
 import { openEnginePanel } from './engine-panel.js';
+import { createRoad } from './road.js';
 
 const settings = loadSettings();
 const MPS_TO_MPH = 2.23694;
@@ -90,6 +91,13 @@ const voice = createVoice(settings);
 const alerts = createAlerts({ cameras, plates, speedCameras: createSpeedCameras(), voice, settings });
 const truckCheck = createTruckCheck({ app, cameras, voice, settings });
 const engine = createEngine({ voice });
+const road = createRoad({
+  map,
+  voice,
+  settings,
+  app,
+  getFix: () => (lastFix && Date.now() - lastFixAt < GPS_STALE_MS ? lastFix : null),
+});
 const detector = createDetector({
   map,
   voice,
@@ -182,6 +190,7 @@ function applySettings() {
   map.setMaxZoom(maxZoom);
   if (map.getZoom() > maxZoom) map.setZoom(maxZoom, { animate: false });
   cameras.setEnabled(settings.cameras);
+  road.setEnabled(settings.roadInfo);
   plates.setEnabled(settings.plates);
   detector.setEnabled(settings.plates);
   radio.onLowData(settings.lowData);
@@ -221,6 +230,11 @@ function onFix(raw) {
     alerts.onFix(fix);
   } catch (err) {
     console.warn('alerts:', err);
+  }
+  try {
+    road.onFix(fix);
+  } catch (err) {
+    console.warn('road info:', err);
   }
   try {
     truckCheck.onFix(fix);

@@ -23,6 +23,9 @@ const DEFAULTS = {
   // Engine data from the AndrOBD app (engine.js).
   sayEngine: true,
   detectorWeakHits: false,
+  // AZ511 road info (road.js): dots plus cards that slide in near each one.
+  roadInfo: true,
+  sayRoad: true,
 };
 
 export function loadSettings() {

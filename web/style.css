@@ -1,5 +1,6 @@
-/* Plain, high-contrast, no animations. Written for an old Android 9 WebView:
-   no flex `gap`, no `inset`, no `aspect-ratio`. */
+/* Plain, high-contrast. The only animation is the road-info card's slide
+   (transform + opacity, which the GPU does). Written for an old Android 9
+   WebView: no flex `gap`, no `inset`, no `aspect-ratio`. */
 :root {
   --bg: #0b0f14;
   --panel: rgba(16, 23, 31, 0.94);
@@ -474,4 +475,149 @@ body.drive #status .speed {
   border: 3px solid var(--warn);
   border-radius: 4px;
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+}
+
+/* Road info dots (road.js): closure, crash, highway sign, weather station, rest area. */
+.dot-closure::after,
+.dot-crash::after,
+.dot-rest::after {
+  left: 9px;
+  top: 9px;
+  width: 18px;
+  height: 18px;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+}
+.dot-closure::after {
+  content: '\00d7';
+  border-radius: 4px;
+  border-color: #fff;
+  background: #e5484d;
+}
+.dot-crash::after {
+  content: '!';
+  border-color: #fff;
+  background: #ff7a1a;
+}
+.dot-rest::after {
+  content: 'R';
+  border-radius: 4px;
+  border-color: #fff;
+  background: #2fbf71;
+}
+.dot-sign::after {
+  left: 9px;
+  top: 13px;
+  width: 18px;
+  height: 10px;
+  border-radius: 2px;
+  border-color: #000;
+  background: var(--warn);
+}
+.dot-weather::after {
+  left: 13px;
+  top: 13px;
+  width: 10px;
+  height: 10px;
+  border-color: #1b1240;
+  background: #9b7bff;
+}
+
+/* Road info card: slides down from the top by itself; a tap slides it away. */
+.pop {
+  position: absolute;
+  z-index: 1001;
+  top: 12px;
+  left: 196px;
+  right: 152px;
+  padding: 12px 16px 12px 22px;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-left: 10px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  -webkit-transform: translateY(-140%);
+  transform: translateY(-140%);
+  transition: opacity 0.3s ease-out, -webkit-transform 0.3s ease-out;
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+.pop.in {
+  opacity: 1;
+  -webkit-transform: translateY(0);
+  transform: translateY(0);
+}
+/* Under the turn bar while a route is on, and beside an open panel. */
+#turnbar:not([hidden]) ~ .pop {
+  top: 112px;
+}
+body.sheet-open .pop {
+  left: 452px;
+}
+.pop-closure {
+  border-left-color: #e5484d;
+}
+.pop-crash {
+  border-left-color: #ff7a1a;
+}
+.pop-sign {
+  border-left-color: var(--warn);
+}
+.pop-weather {
+  border-left-color: #9b7bff;
+}
+.pop-rest {
+  border-left-color: #2fbf71;
+}
+.pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.pop-title {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+.pop-closure .pop-title {
+  color: #ff6b70;
+}
+.pop-crash .pop-title {
+  color: #ff9a4d;
+}
+.pop-dist {
+  margin-left: 16px;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.pop-text {
+  margin-top: 4px;
+  font-size: 17px;
+  line-height: 1.3;
+  max-height: 3.9em;
+  overflow: hidden;
+}
+.pop-sub {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--muted);
+}
+/* A highway message sign: amber capitals on black, one page at a time. */
+.pop-board {
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: #000;
+  border-radius: 6px;
+  color: #ffb000;
+  font-family: 'Courier New', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  white-space: pre-line;
 }

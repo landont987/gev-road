@@ -12,6 +12,7 @@ const SWITCHES = [
   ['sayLink', 'LOST GPS OR INTERNET'],
   ['sayDetector', 'PLATE-READER DETECTOR (USB BOARD)'],
   ['sayEngine', 'ENGINE RUNNING HOT (ANDROBD)'],
+  ['sayRoad', 'CLOSURES, CRASHES AND HIGH WIND'],
 ];
 
 /** ctx: { settings, save(), voice, truckCheck, lastFix(), lastFixAt() } */
@@ -58,6 +59,18 @@ export function openVoicePanel(ctx) {
 
   body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'SAY OUT LOUD')));
   for (const [name, label] of SWITCHES) body.appendChild(toggle(name, label));
+
+  body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'ROAD INFO (AZ511)')));
+  body.appendChild(
+    el(
+      'p',
+      { class: 'sheet-sub' },
+      KEYS.az511
+        ? 'Closures, crashes, highway signs, weather stations and rest areas. A card slides in as you get close; only closures, crashes and high wind speak.'
+        : 'Needs your AZ511 key in keys.local.json.',
+    ),
+  );
+  body.appendChild(toggle('roadInfo', 'ROAD INFO POP-UPS'));
 
   body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'VOICE')));
   if (KEYS.openai) {
