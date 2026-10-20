@@ -6,7 +6,7 @@
 import { OVERPASS_URL, SPEED_CAMERAS_QUERY, SPEED_CAMERAS_TTL_MS } from './config.js';
 import { parseSpeedCameras } from './parse.js';
 import { readCache, writeCache } from './settings.js';
-import { fetchWithTimeout } from './ui.js';
+import { nativeFetch } from './native-fetch.js';
 import BUNDLED from './data/az-speed-cameras.json';
 
 const CACHE_KEY = 'gev-road-speed-cameras';
@@ -25,8 +25,9 @@ export function createSpeedCameras() {
   function load() {
     if (loading || Date.now() - loadedAt < SPEED_CAMERAS_TTL_MS || Date.now() - failedAt < RETRY_MS) return;
     loading = true;
-    // Overpass answers browsers with Access-Control-Allow-Origin: * and speaks TLS 1.2.
-    fetchWithTimeout(`${OVERPASS_URL}?data=${encodeURIComponent(SPEED_CAMERAS_QUERY)}`, 30000)
+    // overpass-api.de only speaks TLS 1.3 (checked 2026-10-20), which Android 9's
+    // WebView cannot, so on the truck the Android app fetches it (nativeFetch).
+    nativeFetch(`${OVERPASS_URL}?data=${encodeURIComponent(SPEED_CAMERAS_QUERY)}`, 30000)
       .then((res) => {
         if (!res.ok) throw new Error(`speed cameras HTTP ${res.status}`);
         return res.json();
