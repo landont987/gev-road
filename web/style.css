@@ -70,11 +70,13 @@ button[disabled] {
   border-radius: 12px;
 }
 
+/* A fixed width: the turn bar and road cards start at left 196px, so a wider
+   card (DATA 123.4 MB, the engine line) would slide under them. Long lines wrap. */
 #status {
   top: 12px;
   left: 12px;
   padding: 8px 14px 10px;
-  min-width: 150px;
+  width: 150px;
 }
 #status .speed {
   font-size: 44px;
