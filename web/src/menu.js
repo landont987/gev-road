@@ -11,7 +11,29 @@ export function versionText(ua) {
     .join(' · ');
 }
 
-/** app: { gps, traffic, routing, dataText(), openVoice(), openDetector(), openEngine() } */
+const MB = 1048576;
+const GB = 1073741824;
+const MEMORY_PLACEHOLDER = 'Memory used: shown on the truck (read from the Android app).';
+
+/**
+ * The MEMORY line from the app's JSON {app, processes, free, total, low}
+ * (bytes; app is -1 when the unit does not report it). A placeholder in the
+ * browser, like the data meter.
+ */
+export function memoryText(json) {
+  let info = null;
+  try {
+    info = json ? JSON.parse(json) : null;
+  } catch (err) {
+    info = null;
+  }
+  if (!info || !(info.app >= 0) || !(info.total > 0)) return MEMORY_PLACEHOLDER;
+  const app = `${Math.round(info.app / MB)} MB in ${info.processes} ${info.processes === 1 ? 'process' : 'processes'}`;
+  const unit = `${Math.round(info.free / MB)} MB free of ${(info.total / GB).toFixed(1)} GB`;
+  return `Memory: this app ${app}. The unit has ${unit}.${info.low ? ' Android says memory is low.' : ''}`;
+}
+
+/** app: { gps, traffic, routing, dataText(), memoryText(), openVoice(), openDetector(), openEngine() } */
 export function openMenu(app) {
   const body = openSheet('menu', 'Menu');
   const gps = app.gps;
@@ -52,6 +74,7 @@ export function openMenu(app) {
 
   body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'DATA')));
   body.appendChild(el('p', { class: 'sheet-sub' }, app.dataText()));
+  body.appendChild(el('p', { class: 'sheet-sub' }, app.memoryText()));
   body.appendChild(
     el(
       'p',
