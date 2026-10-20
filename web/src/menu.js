@@ -17,8 +17,10 @@ const MEMORY_PLACEHOLDER = 'Memory used: shown on the truck (read from the Andro
 
 /**
  * The MEMORY line from the app's JSON {app, processes, free, total, low}
- * (bytes; app is -1 when the unit does not report it). A placeholder in the
- * browser, like the data meter.
+ * (bytes; app is -1 when the unit does not report it). The unit's free memory
+ * leads: it is the trustworthy figure. On Android 9 the map page runs in a
+ * WebView process the app cannot list, so a one-process figure is named as
+ * the app process only. A placeholder in the browser, like the data meter.
  */
 export function memoryText(json) {
   let info = null;
@@ -27,10 +29,15 @@ export function memoryText(json) {
   } catch (err) {
     info = null;
   }
-  if (!info || !(info.app >= 0) || !(info.total > 0)) return MEMORY_PLACEHOLDER;
-  const app = `${Math.round(info.app / MB)} MB in ${info.processes} ${info.processes === 1 ? 'process' : 'processes'}`;
-  const unit = `${Math.round(info.free / MB)} MB free of ${(info.total / GB).toFixed(1)} GB`;
-  return `Memory: this app ${app}. The unit has ${unit}.${info.low ? ' Android says memory is low.' : ''}`;
+  if (!info || !(info.total > 0)) return MEMORY_PLACEHOLDER;
+  const parts = [`Memory: the unit has ${Math.round(info.free / MB)} MB free of ${(info.total / GB).toFixed(1)} GB.`];
+  if (info.low) parts.push('Android says memory is low.');
+  const mb = Math.round(info.app / MB);
+  if (info.app >= 0 && info.processes > 1) parts.push(`This app ${mb} MB in ${info.processes} processes.`);
+  else if (info.app >= 0 && info.processes === 1) {
+    parts.push(`App process ${mb} MB; the map page runs in a WebView process Android does not report here.`);
+  }
+  return parts.join(' ');
 }
 
 /** app: { gps, traffic, routing, dataText(), memoryText(), openVoice(), openDetector(), openEngine() } */

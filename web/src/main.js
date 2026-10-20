@@ -153,7 +153,7 @@ function dataText() {
   return `Data used since the app opened: ${(bytes / 1048576).toFixed(1)} MB.`;
 }
 
-/** The MEMORY line for the menu: read from the app each time the menu opens. */
+/** The MEMORY line for the menu: read from the app each time the menu opens (a blocking bridge call, so only on a tap). */
 function memoryText() {
   if (!window.GevNative || typeof window.GevNative.memoryJson !== 'function') return memoryLine(null);
   try {
