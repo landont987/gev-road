@@ -42,3 +42,27 @@ test('method, Authorization, Content-Type and body are passed on, and the answer
   assert.equal(sent[0].body, 'username=a&password=b');
   assert.equal(sent[0].base64, false);
 });
+
+// A big answer (the 2.4 MB closures feed) is kept by the app and pulled by the
+// page with fetch() (#59), so it never crosses as a script literal.
+test('a kept answer is pulled from /native/http/<id> and read as text', async () => {
+  sent.length = 0;
+  const fetched = [];
+  globalThis.fetch = (url) => {
+    fetched.push(url);
+    return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('[{"big":true}]') });
+  };
+  window.GevNative.httpEx = (id) => setImmediate(() => window.gevOnHttp(id, 200, null, 7, true));
+  const res = await nativeFetch('https://az511.com/api/v2/get/event?format=json&key=k', 45000);
+  assert.equal(res.status, 200);
+  assert.equal(res.ageSeconds, 7);
+  assert.deepEqual(await res.json(), [{ big: true }]);
+  assert.equal(fetched.length, 1);
+  assert.match(String(fetched[0]), /^\/native\/http\/\d+$/);
+});
+
+test('a kept answer the app no longer has fails like a network failure', async () => {
+  globalThis.fetch = () => Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve('') });
+  window.GevNative.httpEx = (id) => setImmediate(() => window.gevOnHttp(id, 200, null, -1, true));
+  await assert.rejects(nativeFetch('https://az511.com/api/v2/get/event?format=json&key=k', 45000), /app error: the answer was lost/);
+});

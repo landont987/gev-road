@@ -48,6 +48,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -65,6 +66,11 @@ public class MainActivity extends Activity {
     private static final long TILE_MAX_BYTES = 150L * 1024 * 1024;
     // Short: the WebView may run these fetches one after another, so a stalled hotspot must not hold the page.
     private static final int TILE_TIMEOUT_MS = 8000;
+    // An HTTP answer longer than this is pulled by the page with fetch() instead of being pushed as a
+    // script literal through the UI thread (#59). The AZ511 closures feed is about 2.4 MB.
+    private static final int INLINE_BODY_MAX = 64 * 1024;
+    private static final int PULL_BODIES_MAX = 8; // answers waiting for the page, in case it never asks
+    private static final String PULL_PATH = "/native/http/";
     private static final long TILE_NETWORK_PAUSE_MS = 30000; // after a failed fetch, serve stale or hand over for this long
     private static final long GPS_INTERVAL_MS = 1000;
     // A saved fix older than this is not shown as the truck's position.
@@ -76,6 +82,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private RadioDrawer radio;
     private TileCache tiles;
+    private final Map<Integer, byte[]> pullBodies = new ConcurrentHashMap<>();
     private volatile long tileNetworkPausedUntil = 0;
     private Speech speech;
     private Detector detector;
@@ -127,7 +134,10 @@ public class MainActivity extends Activity {
         NativeHttp.init(this);
         tiles = new TileCache(new File(getCacheDir(), "tiles"), TILE_MAX_AGE_MS, TILE_MAX_BYTES);
         final TileCache toPrune = tiles;
-        new Thread(() -> toPrune.prune(System.currentTimeMillis()), "tile-prune").start();
+        new Thread(() -> {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND); // the page is starting
+            toPrune.prune(System.currentTimeMillis());
+        }, "tile-prune").start();
         speech = new Speech(this, new Speech.Listener() {
             @Override
             public void onSpeaking(boolean speaking) {
@@ -162,6 +172,8 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                WebResourceResponse pulled = pullResponse(request);
+                if (pulled != null) return pulled;
                 WebResourceResponse tile = tileResponse(request);
                 if (tile != null) return tile;
                 return assets.shouldInterceptRequest(request.getUrl());
@@ -298,6 +310,7 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (lastOnline != null && lastOnline == online) return;
                     lastOnline = online;
+                    speech.setOnline(online); // so an alert never waits 6 s for OpenAI on a dead hotspot (#61)
                     js("window.gevOnNetwork&&window.gevOnNetwork(" + online + ")");
                 });
             }
@@ -457,9 +470,7 @@ public class MainActivity extends Activity {
                     Log.e(TAG, "request crashed", e);
                     result = new NativeHttp.Result(0, "app error: " + e.getClass().getSimpleName());
                 }
-                final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
-                        + jsString(result.body) + "," + result.ageSeconds + ")";
-                runOnUiThread(() -> js(js));
+                answerHttp(id, result);
             }, "gev-http-" + id).start();
         }
 
@@ -481,9 +492,7 @@ public class MainActivity extends Activity {
                     Log.e(TAG, "request crashed", e);
                     result = new NativeHttp.Result(0, "app error: " + e.getClass().getSimpleName());
                 }
-                final String js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
-                        + jsString(result.body) + "," + result.ageSeconds + ")";
-                runOnUiThread(() -> js(js));
+                answerHttp(id, result);
             }, "gev-http-" + id).start();
         }
 
@@ -600,6 +609,48 @@ public class MainActivity extends Activity {
             Log.w(TAG, "tile " + key + " failed", e);
         }
         return null;
+    }
+
+    /**
+     * Hands an HTTP answer to the page: small ones inline through gevOnHttp, big ones
+     * kept here for the page to fetch from /native/http/<id> (#59), so a 2.4 MB feed
+     * never becomes a script literal on the UI thread.
+     */
+    private void answerHttp(int id, NativeHttp.Result result) {
+        final String js;
+        if (result.body.length() > INLINE_BODY_MAX && result.status != 0) {
+            while (pullBodies.size() >= PULL_BODIES_MAX) {
+                Integer oldest = null;
+                for (Integer key : pullBodies.keySet()) if (oldest == null || key < oldest) oldest = key;
+                if (oldest == null) break;
+                pullBodies.remove(oldest);
+            }
+            pullBodies.put(id, result.body.getBytes(StandardCharsets.UTF_8));
+            js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ",null," + result.ageSeconds + ",true)";
+        } else {
+            js = "window.gevOnHttp&&window.gevOnHttp(" + id + "," + result.status + ","
+                    + jsString(result.body) + "," + result.ageSeconds + ")";
+        }
+        runOnUiThread(() -> js(js));
+    }
+
+    /** A big HTTP answer the page is fetching (#59); 404 once taken or never kept. Null for any other URL. */
+    private WebResourceResponse pullResponse(WebResourceRequest request) {
+        Uri url = request.getUrl();
+        String path = url.getPath();
+        if (!"https".equals(url.getScheme()) || !APP_HOST.equals(url.getAuthority()) || path == null
+                || !path.startsWith(PULL_PATH)) return null;
+        byte[] body = null;
+        try {
+            body = pullBodies.remove(Integer.parseInt(path.substring(PULL_PATH.length())));
+        } catch (NumberFormatException e) {
+            // not one of ours: fall through to 404
+        }
+        if (body == null) {
+            return new WebResourceResponse("text/plain", "utf-8", 404, "Gone", new LinkedHashMap<>(),
+                    new ByteArrayInputStream(new byte[0]));
+        }
+        return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(body));
     }
 
     private static WebResourceResponse tileFile(File file) throws IOException {

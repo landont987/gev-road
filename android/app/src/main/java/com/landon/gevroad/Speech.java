@@ -79,10 +79,12 @@ final class Speech {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final AtomicLong newest = new AtomicLong();
     private final AtomicInteger generation = new AtomicInteger();
-    private final CountDownLatch engineReady = new CountDownLatch(1);
+    private volatile CountDownLatch engineReady = new CountDownLatch(1);
     private final Map<String, CountDownLatch> utterances = new LinkedHashMap<>();
     private final Set<String> reported = new HashSet<>();
-    private final TextToSpeech engine;
+    private final Context app;
+    private volatile TextToSpeech engine;
+    private volatile Boolean knownOnline; // the activity's validated state, when it has one (#61)
     private volatile boolean engineOk;
     private boolean languageChecked; // speech thread only
     private int playFailures; // speech thread only
@@ -92,17 +94,24 @@ final class Speech {
     private volatile CountDownLatch waiting;
 
     Speech(Context context, Listener listener) {
-        Context app = context.getApplicationContext();
+        app = context.getApplicationContext();
         this.listener = listener;
         audio = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
         network = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
         clips = new File(app.getCacheDir(), "voice");
-        // onInit can run inside this constructor when no engine exists, so it only records the result.
-        engine = new TextToSpeech(app, (status) -> {
+        engine = createEngine();
+    }
+
+    /** The unit's own voice. Also built again after it refuses an alert (its process was killed). */
+    private TextToSpeech createEngine() {
+        final CountDownLatch ready = new CountDownLatch(1);
+        engineReady = ready;
+        // onInit can run inside this call when no engine exists, so it only records the result.
+        TextToSpeech tts = new TextToSpeech(app, (status) -> {
             engineOk = status == TextToSpeech.SUCCESS;
-            engineReady.countDown();
+            ready.countDown();
         });
-        engine.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
             @Override
             public void onStart(String id) {
             }
@@ -131,6 +140,12 @@ final class Speech {
                 finishUtterance(id);
             }
         });
+        return tts;
+    }
+
+    /** The activity's view of the hotspot (validated, with its head-unit allowances); null until it reports. */
+    void setOnline(boolean online) {
+        knownOnline = online;
     }
 
     /**
@@ -190,6 +205,8 @@ final class Speech {
      * is handled anyway. Also used by the page (AI truck check, startup state).
      */
     boolean isOnline() {
+        Boolean known = knownOnline;
+        if (known != null) return known;
         Network active = network.getActiveNetwork();
         NetworkCapabilities caps = active == null ? null : network.getNetworkCapabilities(active);
         return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
@@ -377,9 +394,7 @@ final class Speech {
             utterances.put(id, done);
         }
         try {
-            engine.setAudioAttributes(GUIDANCE);
-            if (engine.speak(text, TextToSpeech.QUEUE_ADD, null, id) != TextToSpeech.SUCCESS) {
-                Log.w(TAG, "the built-in voice refused an alert");
+            if (!speakOrRebuild(text, id)) {
                 report("tts-failed");
                 return;
             }
@@ -395,6 +410,32 @@ final class Speech {
             audio.abandonAudioFocusRequest(focus);
             listener.onSpeaking(false);
         }
+    }
+
+    /**
+     * Hands the text to the engine. A refusal usually means its process was
+     * killed for memory: the engine is built again, and this same alert is
+     * tried once more on the new one (#61), so the alert that found the dead
+     * engine is not the one that goes unsaid.
+     */
+    private boolean speakOrRebuild(String text, String id) {
+        engine.setAudioAttributes(GUIDANCE);
+        if (engine.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS) return true;
+        Log.w(TAG, "the built-in voice refused an alert; starting it again");
+        TextToSpeech old = engine;
+        languageChecked = false;
+        engine = createEngine();
+        old.shutdown();
+        try {
+            if (!engineReady.await(ENGINE_WAIT_MS, TimeUnit.MILLISECONDS) || !engineOk) return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        languageChecked = true;
+        engine.setLanguage(Locale.US);
+        engine.setAudioAttributes(GUIDANCE);
+        return engine.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS;
     }
 
     private void finishUtterance(String id) {
