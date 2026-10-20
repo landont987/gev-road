@@ -56,11 +56,14 @@ export function truckCheckBody({ camera, reference, description }) {
   parts.push({
     text:
       `The driver's truck: ${description || 'a pickup truck (no description given)'}.\n` +
-      `Is a vehicle that matches the driver's truck visible in ${camLabel}? Match on body style, make and model, ` +
-      'color, and stand-out features. Many trucks look alike, so set found to true only when the match is clear. ' +
+      `Look at every vehicle in ${camLabel}. Pick the one that looks most like the driver's truck and name its main ` +
+      'color and its body type (pickup, semi truck, dump truck, box truck, SUV, van, car, bus or other).\n' +
+      'Set found to true only when that vehicle clearly has the same color and the same body type, and its make and ' +
+      'model fit when they can be seen. A semi, a dump truck, a box truck or a vehicle of another color is never a match. ' +
+      'Most traffic camera pictures do not show the driver\'s truck, so when in doubt answer false.\n' +
       'Do not read or report license plates and do not describe people.\n' +
       'Answer with only this JSON:\n' +
-      `{"found": true or false, "confidence": "low" or "medium" or "high", "box_2d": [ymin, xmin, ymax, xmax] around the matching vehicle in ${camLabel}, normalized to 0-1000, or null, "note": "one short sentence, such as where in the picture it is"}`,
+      `{"candidate": {"color": "its main color", "body": "its body type"} or null when no vehicle is visible, "found": true or false, "confidence": "low" or "medium" or "high", "box_2d": [ymin, xmin, ymax, xmax] around that vehicle in ${camLabel}, normalized to 0-1000, or null, "note": "one short sentence, such as where in the picture it is"}`,
   });
   return {
     system_instruction: { parts: [{ text: SYSTEM }] },
@@ -85,14 +88,8 @@ function percentBox(box) {
   return { left: pct(x1), top: pct(y1), width: pct(x2 - x1), height: pct(y2 - y1) };
 }
 
-const DECLINED = { SAFETY: true, PROHIBITED_CONTENT: true, BLOCKLIST: true, IMAGE_SAFETY: true, SPII: true, RECITATION: true };
-
-/**
- * Gemini's answer -> { found, confidence, box (percent of the picture) | null, note }.
- * Throws when Gemini did not give a usable answer, so a non-answer is never
- * shown as "your truck was not seen".
- */
-export function parseTruckCheck(apiJson) {
+/** The model's answer text (its thinking left out), after the checks every answer needs. */
+function answerText(apiJson) {
   if (apiJson && apiJson.promptFeedback && apiJson.promptFeedback.blockReason) {
     throw new Error('Gemini declined to look at this picture.');
   }
@@ -101,7 +98,43 @@ export function parseTruckCheck(apiJson) {
   if (DECLINED[finish]) throw new Error('Gemini declined to look at this picture.');
   if (finish === 'MAX_TOKENS') throw new Error("Gemini's answer was cut off.");
   const parts = (candidate && candidate.content && Array.isArray(candidate.content.parts) && candidate.content.parts) || [];
-  const text = parts.filter((p) => p && typeof p.text === 'string' && !p.thought).map((p) => p.text).join('\n');
+  return parts.filter((p) => p && typeof p.text === 'string' && !p.thought).map((p) => p.text).join('\n');
+}
+
+const DECLINED = { SAFETY: true, PROHIBITED_CONTENT: true, BLOCKLIST: true, IMAGE_SAFETY: true, SPII: true, RECITATION: true };
+
+const COLORS = ['red', 'white', 'black', 'silver', 'gray', 'grey', 'blue', 'green', 'tan', 'gold', 'brown', 'orange', 'yellow', 'maroon', 'beige', 'purple'];
+// Bodies that are never the driver's truck unless its description says so.
+const OTHER_BODIES = ['semi', 'tractor', 'dump', 'box truck', 'bus', 'car', 'sedan', 'suv', 'van', 'minivan', 'motorcycle', 'trailer', 'flatbed', 'tanker'];
+
+const wordsIn = (text, list) => list.filter((w) => new RegExp(`\\b${w}\\b`, 'i').test(text));
+
+/**
+ * Can the vehicle Gemini picked be the driver's truck? Only checked when the
+ * description names a color or the vehicle is a kind the description does not
+ * mention: a white dump truck is never "a red Toyota Tundra" (Gemini said it
+ * was, 5 times of 5, on 2026-10-20).
+ */
+function couldBeTheTruck(candidate, description) {
+  if (!description) return true;
+  if (!candidate || typeof candidate !== 'object') return false;
+  const color = String(candidate.color || '');
+  const body = String(candidate.body || '');
+  const truckColors = wordsIn(description, COLORS);
+  const seenColors = wordsIn(color, COLORS);
+  if (truckColors.length && seenColors.length && !seenColors.some((c) => truckColors.indexOf(c) >= 0)) return false;
+  const odd = wordsIn(body, OTHER_BODIES).filter((b) => wordsIn(description, [b]).length === 0);
+  return odd.length === 0;
+}
+
+/**
+ * Gemini's answer -> { found, confidence, box (percent of the picture) | null, note }.
+ * Throws when Gemini did not give a usable answer, so a non-answer is never
+ * shown as "your truck was not seen". With the driver's description, a
+ * "found" whose vehicle cannot be the truck (another color, a semi...) is "not seen".
+ */
+export function parseTruckCheck(apiJson, description) {
+  const text = answerText(apiJson);
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   let answer = null;
@@ -113,13 +146,104 @@ export function parseTruckCheck(apiJson) {
     }
   }
   if (!answer || typeof answer.found !== 'boolean') throw new Error("Gemini's answer could not be read.");
-  if (!answer.found) return NOT_FOUND;
+  if (!answer.found || !couldBeTheTruck(answer.candidate, description)) return NOT_FOUND;
   return {
     found: true,
     confidence: CONFIDENCE[answer.confidence] ? answer.confidence : 'low',
     box: percentBox(answer.box_2d),
     note: typeof answer.note === 'string' ? answer.note.slice(0, 200) : '',
   };
+}
+
+// ---- The first look: the vehicles in the picture, asked without the driver's
+// truck in the question. Told what to look for, Gemini "found a red Toyota
+// Tundra" in a white dump truck 5 times of 5 (2026-10-20); asked only to list
+// the vehicles, it called it a white semi truck 4 times of 4.
+
+const LIST_SYSTEM = 'You list the vehicles in one still picture from an Arizona DOT traffic camera. You answer with JSON only.';
+const MAX_VEHICLES = 12;
+
+/** Body for the first look: the camera picture only. */
+export function vehicleListBody({ camera }) {
+  return {
+    system_instruction: { parts: [{ text: LIST_SYSTEM }] },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          imagePart(camera),
+          {
+            text:
+              `List every car, truck, van, bus and motorcycle you can see in this picture, up to ${MAX_VEHICLES}, nearest first. ` +
+              'For each: its main color, its body type (pickup, semi truck, dump truck, box truck, SUV, van, car, bus, ' +
+              'motorcycle or other), and a box. Do not read or report license plates and do not describe people.\n' +
+              'Answer with only this JSON:\n' +
+              '{"vehicles": [{"color": "...", "body": "...", "box_2d": [ymin, xmin, ymax, xmax] normalized to 0-1000}]}',
+          },
+        ],
+      },
+    ],
+    generationConfig: { responseMimeType: 'application/json', maxOutputTokens: MAX_TOKENS },
+  };
+}
+
+/** The first look's answer -> [{ color, body, box | null }]. Throws when it cannot be read. */
+export function parseVehicleList(apiJson) {
+  const text = answerText(apiJson);
+  let rows = null;
+  try {
+    const parsed = JSON.parse(text.trim());
+    rows = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.vehicles) ? parsed.vehicles : null;
+  } catch (err) {
+    rows = vehiclesFromBrokenJson(text); // Gemini sometimes drops a brace (1 answer in 6, 2026-10-20)
+  }
+  if (!rows) throw new Error("Gemini's vehicle list could not be read.");
+  return rows
+    .filter((v) => v && typeof v === 'object')
+    .slice(0, MAX_VEHICLES)
+    .map((v) => ({ color: String(v.color || ''), body: String(v.body || ''), box: percentBox(v.box_2d) }));
+}
+
+/** The vehicle objects that still read on their own, or null when none do. */
+function vehiclesFromBrokenJson(text) {
+  const found = [];
+  const pieces = text.match(/\{[^{}]*"color"[^{}]*\}/g) || [];
+  for (const piece of pieces) {
+    try {
+      found.push(JSON.parse(piece));
+    } catch (err) {
+      // not one whole vehicle: skip it
+    }
+  }
+  return found.length ? found : null;
+}
+
+/** The listed vehicles whose color and body could be the driver's truck. */
+export function plausibleVehicles(vehicles, description) {
+  return vehicles.filter((v) => couldBeTheTruck(v, description));
+}
+
+const BOX_SLACK = 2; // percent of the picture: two looks box the same vehicle a little differently
+
+function overlaps(a, b) {
+  return (
+    a.left < b.left + b.width + BOX_SLACK &&
+    b.left < a.left + a.width + BOX_SLACK &&
+    a.top < b.top + b.height + BOX_SLACK &&
+    b.top < a.top + a.height + BOX_SLACK
+  );
+}
+
+/**
+ * The comparison's "found" stands only when its box lands on one of the
+ * plausible vehicles. With no box to check it is kept at low confidence:
+ * shown under SHOW THE LAST CHECK, never spoken.
+ */
+export function confirmMatch(result, plausible) {
+  if (!result.found) return result;
+  if (!result.box) return Object.assign({}, result, { confidence: 'low' });
+  const hit = plausible.some((v) => v.box && overlaps(v.box, result.box));
+  return hit ? result : NOT_FOUND;
 }
 
 export function base64FromBytes(bytes) {
