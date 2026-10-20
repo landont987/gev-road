@@ -29,21 +29,30 @@ function isAhead(fix, spot, d) {
   return angleDiff(bearingDeg(fix, spot), fix.bearing) <= AHEAD_CONE_DEG;
 }
 
-const ROAD_WORDS = { Rd: 'Road', St: 'Street', Ave: 'Avenue', Dr: 'Drive', Blvd: 'Boulevard', Pkwy: 'Parkway', Hwy: 'Highway' };
+const ROAD_WORDS = { rd: 'Road', st: 'Street', ave: 'Avenue', av: 'Avenue', dr: 'Drive', blvd: 'Boulevard', pkwy: 'Parkway', hwy: 'Highway', ln: 'Lane' };
 const SIDES = { E: 'east', W: 'west', N: 'north', S: 'south' };
+const PREFIX = { E: 'East', W: 'West', N: 'North', S: 'South' };
 const BOUND = { EB: 'eastbound', WB: 'westbound', NB: 'northbound', SB: 'southbound' };
 const LOOPS = { 101: true, 202: true, 303: true };
 
-/** "SR-202 @E of McClintock Dr" -> "Loop 202 at east of McClintock Drive", for the voice. */
+/**
+ * "SR-202 @E of McClintock Dr" -> "Loop 202 at east of McClintock Drive", for the voice.
+ * AZ511 road names too: "N 35TH AV/W EVA ST ,PHX" -> "North 35TH Avenue and West EVA Street"
+ * (the city code after the comma is dropped), "202-LOOP" -> "Loop 202".
+ */
 export function spokenPlace(name) {
   return String(name || '')
+    .replace(/\s*,\s*[A-Z]{2,4}\s*$/, '')
+    .replace(/\b(\d+)-LOOP\b/gi, 'Loop $1')
     .replace(/\bSR-(\d+)/g, (m, n) => (LOOPS[n] ? `Loop ${n}` : `State Route ${n}`))
     .replace(/\b(I|US)-(\d+)/g, '$1 $2')
     .replace(/@\s*(\d+(?:\.\d+)?)\b/g, 'at milepost $1')
     .replace(/@\s*/g, 'at ')
+    .replace(/\s*\/\s*/g, ' and ')
     .replace(/\b([EWNS]) of\b/g, (m, side) => `${SIDES[side]} of`)
+    .replace(/\b([EWNS])\s+(?=[A-Za-z0-9])/g, (m, side) => `${PREFIX[side]} `)
     .replace(/\b(EB|WB|NB|SB)\b/g, (m, b) => BOUND[b])
-    .replace(/\b(Rd|St|Ave|Dr|Blvd|Pkwy|Hwy)\b\.?/g, (m, w) => ROAD_WORDS[w])
+    .replace(/\b(Rd|St|Ave|Av|Dr|Blvd|Pkwy|Hwy|Ln)\b\.?/gi, (m, w) => ROAD_WORDS[w.toLowerCase()])
     .replace(/\s+/g, ' ')
     .trim();
 }
