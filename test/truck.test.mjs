@@ -61,3 +61,20 @@ test('a drag that goes on resets the 10 s clock', (t) => {
   truck.update(fix(20));
   assert.equal(truck.isFollowing(), true);
 });
+
+test('no re-follow while a finger is still on the map', (t) => {
+  t.mock.timers.enable({ apis: ['Date'] });
+  const map = fakeMap();
+  let dragOn = false;
+  map.dragging = { moving: () => dragOn };
+  const truck = createTruck(map, () => {});
+  truck.update(fix(20));
+  map.fire('dragstart');
+  dragOn = true;
+  t.mock.timers.tick(12000);
+  truck.update(fix(20));
+  assert.equal(truck.isFollowing(), false, 'the finger is still down');
+  dragOn = false;
+  truck.update(fix(20));
+  assert.equal(truck.isFollowing(), true);
+});

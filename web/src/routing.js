@@ -45,6 +45,7 @@ export function createRouting(map, app) {
     route = null;
     dest = null;
     alongM = null;
+    noRouteToasted = false;
     clearDrawing();
     $('turnbar').hidden = true;
   }
@@ -130,6 +131,7 @@ export function createRouting(map, app) {
     if (offCount === 0) {
       offRouteSpoken = false; // back on the line
       rerouteFailSpoken = false;
+      noRouteToasted = false;
     }
     if (offCount >= OFF_ROUTE_FIXES && Date.now() - routedAt > REROUTE_MIN_GAP_MS) {
       toast('Off route. Finding a new one...');

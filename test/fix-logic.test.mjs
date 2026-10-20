@@ -30,3 +30,11 @@ test('no speed after a GPS dropout: speed stays unknown', () => {
   assert.equal(withSpeed(next, prev, 1000, 9000).speed, null);
   assert.equal(withSpeed(next, null, 0, 9000).speed, null);
 });
+
+test('a carried speed is not carried again: a fast unit still gets its speed recomputed', () => {
+  const a = at(33.45, -112.07, 18);
+  const b = withSpeed(at(33.45, -112.07, null), a, 1000, 1200);
+  assert.equal(b.speed, 18);
+  const c = withSpeed(at(33.45, -112.07, null), b, 1200, 1400);
+  assert.equal(c.speed, null, 'the second short gap gets no carried speed');
+});

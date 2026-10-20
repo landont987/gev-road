@@ -39,11 +39,16 @@ export function createTruck(map, onFollowChange) {
   map.on('dragend', () => {
     touchedAt = Date.now();
   });
+  map.on('zoomstart', () => {
+    touchedAt = Date.now();
+  });
 
   function update(fix) {
     last = fix;
     const moving = fix.speed !== null && fix.speed >= MOVING_SPEED_MPS;
-    if (!following && moving && Date.now() - touchedAt >= REFOLLOW_MS) {
+    // A finger held still on the map fires no drag events: ask Leaflet whether a drag is on.
+    const dragging = !!(map.dragging && map.dragging.moving && map.dragging.moving());
+    if (!following && moving && !dragging && Date.now() - touchedAt >= REFOLLOW_MS) {
       following = true; // the recenter below does the rest
       onFollowChange(true);
     }
