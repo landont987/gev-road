@@ -324,6 +324,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         js("window.gevOnAppVisible&&window.gevOnAppVisible(false)");
         stopGps();
+        radio.pause();
         web.onPause();
         super.onPause();
     }

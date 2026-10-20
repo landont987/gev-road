@@ -9,6 +9,7 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.webkit.CookieManager;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -39,10 +40,23 @@ final class RadioDrawer {
      * A Broadcastify feed page puts its player below the site header, out of
      * the drawer's short view (#14). This scrolls the page so the "Live Audio"
      * panel sits just under the site's sticky top bar, once the player is
-     * built (it is drawn by their script, so it tries for up to 10 s). It only
-     * scrolls their page: the audio stays in their own player.
+     * built (it is drawn by their script, so it tries for up to 10 s). On an
+     * Android browser the page also slides up its own "Squawster" app banner,
+     * which covered the play button; the script presses that banner's own
+     * dismiss button once (the site remembers it for 90 days), as the driver
+     * would. Since October 2026 listening needs a free Broadcastify account:
+     * a guest's play opens their "Sign in to listen" box, pinned with CSS
+     * `inset: 0`, which WebView 66 does not know, so the box sat below the
+     * page where it could not be reached. The script gives that one box
+     * top/right/bottom/left 0 (what `inset: 0` means) when it opens.
+     * It only scrolls and dismisses: the audio stays in their player.
      */
-    static final String SHOW_PLAYER_JS = "(function(){var tries=0;function go(){"
+    static final String SHOW_PLAYER_JS = "(function(){var tries=0;"
+            + "setInterval(function(){var a=document.getElementById('lp-auth-modal');"
+            + "if(a&&!a.hidden&&a.style.top!=='0px'){a.style.top='0';a.style.right='0';a.style.bottom='0';a.style.left='0';}},500);"
+            + "function go(){"
+            + "var x=document.querySelector('#portalAppBanner:not([hidden]) .portal-app-banner-close');"
+            + "if(x)x.click();"
             + "var m=document.getElementById('listenPlayerMount');"
             + "if(m&&m.offsetHeight>0){var p=m;"
             + "while(p&&p!==document.body&&!/(^|\\s)listen-panel(\\s|$)/.test(p.className))p=p.parentNode;"
@@ -199,6 +213,8 @@ final class RadioDrawer {
 
     void pause() {
         // Keep the audio going when the screen is off; only release on destroy.
+        // Save cookies now, so a Broadcastify sign-in in the drawer survives the app being killed.
+        CookieManager.getInstance().flush();
     }
 
     void destroy() {
