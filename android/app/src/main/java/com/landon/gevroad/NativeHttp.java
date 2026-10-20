@@ -65,6 +65,7 @@ final class NativeHttp {
             {"generativelanguage.googleapis.com", "POST"},
             {"az511.com", "GET"},
             {"overpass-api.de", "GET"},
+            {TileCache.HOST, "GET"}, // map tiles for the unit's own cache (MainActivity.tileResponse)
     };
     private static final int TIMEOUT_MS = 20000;
     private static final int MAX_TIMEOUT_MS = 90000;
