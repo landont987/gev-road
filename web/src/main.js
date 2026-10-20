@@ -21,7 +21,7 @@ import { createPlates } from './plates.js';
 import { createTraffic } from './traffic.js';
 import { createRouting } from './routing.js';
 import { createRadio } from './radio.js';
-import { openMenu } from './menu.js';
+import { openMenu, memoryText as memoryLine } from './menu.js';
 import { createVoice } from './voice.js';
 import { createAlerts } from './alerts.js';
 import { createSpeedCameras } from './speed-cameras.js';
@@ -151,6 +151,17 @@ function dataText() {
   const bytes = dataBytes();
   if (bytes === null) return 'Data used: shown on the truck (the data meter reads the Android app).';
   return `Data used since the app opened: ${(bytes / 1048576).toFixed(1)} MB.`;
+}
+
+/** The MEMORY line for the menu: read from the app each time the menu opens (a blocking bridge call, so only on a tap). */
+function memoryText() {
+  if (!window.GevNative || typeof window.GevNative.memoryJson !== 'function') return memoryLine(null);
+  try {
+    return memoryLine(window.GevNative.memoryJson());
+  } catch (err) {
+    console.warn('memory meter:', err);
+    return memoryLine(null);
+  }
 }
 
 let dataWarned = false;
@@ -293,7 +304,7 @@ detector.onStateChange(() => {
 function openEngine() {
   openEnginePanel({ engine, isMoving: () => moving });
 }
-$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, openVoice, openDetector, openEngine }));
+$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, memoryText, openVoice, openDetector, openEngine }));
 $('btn-recenter').addEventListener('click', () => truck.setFollowing(true));
 $('btn-sheet-close').addEventListener('click', closeSheet);
 map.on('contextmenu', (e) => routing.confirmPoint(e.latlng));

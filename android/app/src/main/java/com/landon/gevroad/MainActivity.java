@@ -2,6 +2,7 @@ package com.landon.gevroad;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -500,6 +501,53 @@ public class MainActivity extends Activity {
             }
             return (rx - rxAtStart) + (tx - txAtStart);
         }
+
+        /**
+         * Memory for the menu's MEMORY line, as JSON {app, processes, free, total, low}:
+         * this app's PSS in bytes summed over every process Android lists for it
+         * (the WebView renderer included when it is listed), how many that is, and
+         * the unit's free and total memory. app is -1 when the unit does not report it.
+         */
+        @JavascriptInterface
+        public String memoryJson() {
+            return memoryInfoJson();
+        }
+    }
+
+    private String memoryInfoJson() {
+        JSONObject out = new JSONObject();
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            long app = -1;
+            int count = 0;
+            if (am != null) {
+                java.util.List<ActivityManager.RunningAppProcessInfo> running = am.getRunningAppProcesses();
+                if (running != null && !running.isEmpty()) {
+                    int[] pids = new int[running.size()];
+                    for (int i = 0; i < pids.length; i++) pids[i] = running.get(i).pid;
+                    android.os.Debug.MemoryInfo[] infos = am.getProcessMemoryInfo(pids);
+                    if (infos != null) {
+                        app = 0;
+                        for (android.os.Debug.MemoryInfo info : infos) {
+                            if (info == null) continue;
+                            app += info.getTotalPss() * 1024L;
+                            count++;
+                        }
+                    }
+                }
+                ActivityManager.MemoryInfo unit = new ActivityManager.MemoryInfo();
+                am.getMemoryInfo(unit);
+                out.put("free", unit.availMem);
+                out.put("total", unit.totalMem);
+                out.put("low", unit.lowMemory);
+            }
+            out.put("app", app);
+            out.put("processes", count);
+        } catch (JSONException | RuntimeException e) {
+            Log.w(TAG, "memory info failed", e);
+            return "null";
+        }
+        return out.toString();
     }
 
     private static String orEmpty(String text) {
