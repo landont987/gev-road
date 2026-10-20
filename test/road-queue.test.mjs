@@ -4,7 +4,7 @@
 
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import './helpers/dom.mjs';
+import { fakeMap } from './helpers/dom.mjs';
 
 globalThis.__KEYS__ = { az511: 'test' };
 const HOME = { lat: 33.5, lon: -112.07 };
@@ -24,7 +24,7 @@ test('queued cards for signs the truck has already passed are dropped', async ()
   const shown = [];
   const box = document.getElementById('popup');
   const road = createRoad({
-    map: { removeLayer() {} },
+    map: fakeMap(),
     voice: { alert() {} },
     settings: {},
     app: { isLowData: () => false },

@@ -44,6 +44,44 @@ export function fakeNode(tag) {
   return node;
 }
 
+/**
+ * A map for page modules under node: a view box {south, west, north, east}
+ * (the whole world unless given), 'moveend' listeners and the layers added.
+ * moveTo(box) moves the view and fires 'moveend', like a pan on the real map.
+ */
+export function fakeMap(box) {
+  let view = box || { south: -90, west: -180, north: 90, east: 180 };
+  const listeners = {};
+  return {
+    layers: [],
+    getBounds: () => ({
+      getSouth: () => view.south,
+      getWest: () => view.west,
+      getNorth: () => view.north,
+      getEast: () => view.east,
+    }),
+    on(event, fn) {
+      (listeners[event] = listeners[event] || []).push(fn);
+      return this;
+    },
+    addLayer(layer) {
+      if (this.layers.indexOf(layer) < 0) this.layers.push(layer);
+      return this;
+    },
+    removeLayer(layer) {
+      this.layers = this.layers.filter((l) => l !== layer);
+      return this;
+    },
+    hasLayer(layer) {
+      return this.layers.indexOf(layer) >= 0;
+    },
+    moveTo(next) {
+      view = next;
+      (listeners.moveend || []).forEach((fn) => fn());
+    },
+  };
+}
+
 /** Every node under root (depth first), for finding what a module drew. */
 export function allNodes(root) {
   const out = [];

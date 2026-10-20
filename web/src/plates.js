@@ -1,12 +1,11 @@
 // License plate reader (ALPR) locations from the DeFlock OpenStreetMap extract.
 // Locations and tags only; the tiles are tiny (well under 20 KB each).
 
-import L from 'leaflet';
 import { ALPR_TILE_URL, ALPR_MIN_TILE_ZOOM, ALPR_MAX_TILE_ZOOM, ALPR_MAX_TILES, ALPR_TILE_TTL_MS } from './config.js';
 import { pickTileZoom, tilesForBounds } from './geo.js';
 import { parseAlprTile } from './parse.js';
 import { el, openSheet, toast, fetchWithTimeout } from './ui.js';
-import { dot } from './dots.js';
+import { createDotLayer } from './dots.js';
 
 const MAX_CACHED_TILES = 200;
 const TILE_RETRY_MS = 30 * 1000;
@@ -18,7 +17,7 @@ function facing(deg) {
 }
 
 export function createPlates(map) {
-  const group = L.layerGroup();
+  const dots = createDotLayer(map);
   const cache = new Map(); // "z/x/y" -> { at, records }
   const failedAt = {}; // "z/x/y" -> when it last failed
   let enabled = false;
@@ -73,15 +72,16 @@ export function createPlates(map) {
   }
 
   function draw(lists) {
-    group.clearLayers();
     const seen = {};
+    const spots = [];
     for (const records of lists) {
       for (const r of records) {
         if (seen[r.id]) continue;
         seen[r.id] = true;
-        dot(r.lat, r.lon, 'plate', () => show(r)).addTo(group);
+        spots.push({ lat: r.lat, lon: r.lon, kind: 'plate', onTap: () => show(r) });
       }
     }
+    dots.setSpots(spots);
   }
 
   function refresh() {
@@ -90,7 +90,7 @@ export function createPlates(map) {
     const box = { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() };
     const z = pickTileZoom(box, ALPR_MIN_TILE_ZOOM, ALPR_MAX_TILE_ZOOM, ALPR_MAX_TILES);
     if (z === null) {
-      group.clearLayers();
+      dots.setSpots([]);
       drawnKeys = '';
       if (!zoomHintShown) toast('Zoom in to see plate readers.');
       zoomHintShown = true;
@@ -144,13 +144,12 @@ export function createPlates(map) {
     },
     setEnabled(on) {
       enabled = on;
+      dots.setEnabled(on);
       if (on) {
-        group.addTo(map);
         drawnKeys = '';
         refresh();
       } else {
         request++;
-        map.removeLayer(group);
       }
     },
   };

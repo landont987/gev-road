@@ -2,12 +2,11 @@
 // Pictures are ~170 KB each, so they load only on a tap (moving or stopped,
 // Landon 10/20) and never in low data mode.
 
-import L from 'leaflet';
 import { KEYS, AZ_CAMERAS_URL, AZ511_API_CAMERAS_URL, AZ511_IMAGE_URL, CAMERA_LIST_TTL_MS } from './config.js';
 import { parseAzCameras, parseAz511Api } from './parse.js';
 import { readCache, writeCache } from './settings.js';
 import { el, openSheet, openSheetKind, toast, fetchWithTimeout } from './ui.js';
-import { dot } from './dots.js';
+import { createDotLayer } from './dots.js';
 import { nativeFetch } from './native-fetch.js';
 
 // Two caches, so adding or removing the key never shows the other list.
@@ -18,7 +17,7 @@ const LIST_RETRY_MS = 60 * 1000; // background loads (spoken alerts) wait this l
 
 /** app: { isMoving(), isLowData() } */
 export function createCameras(map, app) {
-  const group = L.layerGroup();
+  const dots = createDotLayer(map);
   let loading = null;
   let all = []; // every camera, for the spoken alerts and the AI truck check
   let failedAt = 0;
@@ -78,9 +77,7 @@ export function createCameras(map, app) {
       (cams) => {
         failedAt = 0;
         all = cams;
-        for (const cam of cams) {
-          dot(cam.lat, cam.lon, 'camera', () => show(cam)).addTo(group);
-        }
+        dots.setSpots(cams.map((cam) => ({ lat: cam.lat, lon: cam.lon, kind: 'camera', onTap: () => show(cam) })));
         return cams.length;
       },
       (err) => {
@@ -178,12 +175,8 @@ export function createCameras(map, app) {
       // applySettings calls this on every switch; only turning CAMERAS on loads (and may toast).
       const turnedOn = on && !enabled;
       enabled = on;
-      if (on) {
-        group.addTo(map);
-        if (turnedOn) load(true);
-      } else {
-        map.removeLayer(group);
-      }
+      dots.setEnabled(on);
+      if (turnedOn) load(true);
     },
     /** Every camera, loading the list in the background if needed (also with the layer off). */
     list() {
