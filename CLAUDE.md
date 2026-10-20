@@ -73,6 +73,7 @@ later (see the "Go public" issue).
   - Creating a key in the in-app browser pane failed as "suspicious"; the owner makes keys in their own Chrome.
 - **OpenAI TTS:** `gpt-4o-mini-tts`, clips cached by hash, and the app must disclose that the voice is AI.
 - **ADOT:** reuses camera names, so camera alerts are keyed by place.
+- **Tile cache (0.3.12):** checked on the emulator 2026-10-20. `adb shell svc wifi disable` and `svc data disable` take the emulator offline; after a force-stop and restart the map shows from `cache/tiles` with DATA 0.0 MB. `run-as com.landon.gevroad find cache/tiles -name '*.png'` counts the tiles.
 - **Debug a release build:**
   1. Temporarily set `WebView.setWebContentsDebuggingEnabled(true)` in `MainActivity`.
   2. Run `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`.
