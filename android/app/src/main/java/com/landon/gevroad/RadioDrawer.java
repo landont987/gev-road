@@ -35,6 +35,22 @@ final class RadioDrawer {
     private static final int BAR_DP = 64;
     private static final int LEFT_CLEAR_DP = 96; // the page's zoom and menu buttons
     private static final int RIGHT_CLEAR_DP = 152; // the page's button rail
+    /**
+     * A Broadcastify feed page puts its player below the site header, out of
+     * the drawer's short view (#14). This scrolls the page so the "Live Audio"
+     * panel sits just under the site's sticky top bar, once the player is
+     * built (it is drawn by their script, so it tries for up to 10 s). It only
+     * scrolls their page: the audio stays in their own player.
+     */
+    static final String SHOW_PLAYER_JS = "(function(){var tries=0;function go(){"
+            + "var m=document.getElementById('listenPlayerMount');"
+            + "if(m&&m.offsetHeight>0){var p=m;"
+            + "while(p&&p!==document.body&&!/(^|\\s)listen-panel(\\s|$)/.test(p.className))p=p.parentNode;"
+            + "if(!p||p===document.body)p=m;"
+            + "var bar=document.querySelector('.portalv2-topbar');"
+            + "var top=p.getBoundingClientRect().top+window.pageYOffset-(bar?bar.offsetHeight:0)-4;"
+            + "window.scrollTo(0,Math.max(0,top));return;}"
+            + "if(++tries<20)setTimeout(go,500);}go();})();";
 
     private final Activity activity;
     private final LinearLayout root;
@@ -102,6 +118,15 @@ final class RadioDrawer {
                 if (isScannerHost(host)) return false;
                 openExternal(url);
                 return true;
+            }
+
+            @Override
+            public void onPageFinished(WebView v, String url) {
+                Uri uri = Uri.parse(url);
+                String host = uri.getHost() == null ? "" : uri.getHost();
+                if (host.equals("broadcastify.com") || host.endsWith(".broadcastify.com")) {
+                    v.evaluateJavascript(SHOW_PLAYER_JS, null);
+                }
             }
 
             @Override
