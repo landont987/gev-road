@@ -1,6 +1,9 @@
-// The truck arrow and "follow my truck".
+// The truck arrow and "follow my truck". A finger drag stops following; while
+// moving, the map follows again by itself after 10 s with no touch (#53), so
+// a stray touch never leaves the map frozen until RECENTER is tapped.
 
 import L from 'leaflet';
+import { MOVING_SPEED_MPS } from './config.js';
 
 const ARROW_SVG =
   '<svg width="44" height="44" viewBox="0 0 44 44">' +
@@ -10,12 +13,14 @@ const ARROW_SVG =
   '</g></svg>';
 
 const TURN_ARROW_MIN_SPEED_MPS = 1; // keep the last heading while parked
+const REFOLLOW_MS = 10000; // moving, with no touch this long: follow the truck again
 
 export function createTruck(map, onFollowChange) {
   const icon = L.divIcon({ className: 'truck', html: ARROW_SVG, iconSize: [44, 44], iconAnchor: [22, 22] });
   let marker = null;
   let following = true;
   let last = null;
+  let touchedAt = 0; // when a finger last moved the map
 
   function setFollowing(on) {
     following = on;
@@ -25,11 +30,23 @@ export function createTruck(map, onFollowChange) {
 
   // A finger drag means the driver wants to look around: stop following.
   map.on('dragstart', () => {
+    touchedAt = Date.now();
     if (following) setFollowing(false);
+  });
+  map.on('drag', () => {
+    touchedAt = Date.now();
+  });
+  map.on('dragend', () => {
+    touchedAt = Date.now();
   });
 
   function update(fix) {
     last = fix;
+    const moving = fix.speed !== null && fix.speed >= MOVING_SPEED_MPS;
+    if (!following && moving && Date.now() - touchedAt >= REFOLLOW_MS) {
+      following = true; // the recenter below does the rest
+      onFollowChange(true);
+    }
     const latlng = [fix.lat, fix.lon];
     if (!marker) {
       marker = L.marker(latlng, { icon, interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map);

@@ -16,9 +16,11 @@ import { createCallsPlayer, hasCallsKeys } from './calls.js';
 import { distanceM } from './geo.js';
 import { el, openSheet, closeSheet, toast } from './ui.js';
 import { trackPlayer } from './audio-duck.js';
+import { watchStream } from './stream-retry.js';
 
 const STORE_KEY = 'gev-road-radio';
 const MY_SCANNER_RETRY_MS = 4000;
+const STREAM_STALL_MS = 15000; // no data this long after "stalled": the stream is dead, not slow
 const M_PER_MILE = 1609.344;
 
 function loadStore() {
@@ -59,7 +61,6 @@ export function createRadio(app) {
   const store = loadStore();
   const native = window.GevNative && typeof window.GevNative.radioOpen === 'function' ? window.GevNative : null;
   let audio = null; // <audio> for MY SCANNER
-  let audioRetry = null;
   let playingId = ''; // feed id, 'mine', 'calls' or 'station:<id>'
   let playingLabel = '';
   let county = null; // { ctid, name } for the truck's position
@@ -170,11 +171,7 @@ export function createRadio(app) {
   };
 
   function stopMine() {
-    clearTimeout(audioRetry);
-    audioRetry = null;
     if (audio) {
-      audio.onerror = null;
-      audio.onplaying = null;
       audio.pause();
       audio.removeAttribute('src');
       audio.load();
@@ -203,22 +200,18 @@ export function createRadio(app) {
     audio = new Audio();
     trackPlayer(audio);
     audio.preload = 'none';
-    audio.onplaying = () => {
-      clearTimeout(audioRetry);
-      audioRetry = null;
-    };
-    // A hotspot drop ends the stream; try again a few seconds later, forever,
-    // until the driver presses STOP.
-    audio.onerror = () => {
-      if (audioRetry || playingId !== id) return;
-      audioRetry = setTimeout(() => {
-        audioRetry = null;
-        if (playingId === id && audio) {
-          audio.src = url;
-          audio.play().catch(() => {});
-        }
-      }, MY_SCANNER_RETRY_MS);
-    };
+    // A hotspot drop ends or stalls the stream; try again a few seconds later,
+    // forever, until the driver presses STOP (#56).
+    const mine = audio;
+    watchStream(audio, {
+      retryMs: MY_SCANNER_RETRY_MS,
+      stallMs: STREAM_STALL_MS,
+      isCurrent: () => playingId === id && audio === mine,
+      restart: () => {
+        mine.src = url;
+        mine.play().catch(() => {});
+      },
+    });
     audio.src = url;
     audio.play().catch((err) => {
       console.warn('stream:', err);

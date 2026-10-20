@@ -54,6 +54,16 @@ export function fakeMap(box) {
   const listeners = {};
   return {
     layers: [],
+    views: [], // every setView center, newest last
+    getZoom: () => 13,
+    setView(center) {
+      this.views.push(center);
+      return this;
+    },
+    /** Fires an event's listeners, like a finger drag or a pan on the real map. */
+    fire(event) {
+      (listeners[event] || []).forEach((fn) => fn());
+    },
     getBounds: () => ({
       getSouth: () => view.south,
       getWest: () => view.west,

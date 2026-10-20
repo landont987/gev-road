@@ -12,7 +12,7 @@ import {
   DATA_WARN_BYTES,
 } from './config.js';
 import { $, setOn, toast, closeSheet, openSheetKind } from './ui.js';
-import { distanceM } from './geo.js';
+import { withSpeed } from './fix-logic.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { createGps } from './gps.js';
 import { createTruck } from './truck.js';
@@ -166,11 +166,8 @@ function memoryText() {
 
 let dataWarned = false;
 let gpsLostSpoken = false;
-function updateStatus() {
-  const fresh = lastFix && Date.now() - lastFixAt < GPS_STALE_MS;
-  const speed = fresh && lastFix.speed !== null ? Math.round(lastFix.speed * MPS_TO_MPH) : null;
-  $('speed').textContent = speed === null ? '--' : String(speed);
-  $('gps-state').textContent = !fresh ? 'NO GPS' : lastFix.source === 'demo' ? 'DEMO GPS' : 'GPS OK';
+/** The data meter: a bridge call into the app, so only every 5 s (the interval), not on every fix (#55). */
+function updateData() {
   const bytes = dataBytes();
   $('data-used').textContent = bytes === null ? 'DATA --' : `DATA ${(bytes / 1048576).toFixed(1)} MB`;
   if (bytes !== null && bytes > DATA_WARN_BYTES && !settings.lowData && !dataWarned) {
@@ -178,6 +175,13 @@ function updateStatus() {
     toast('This app has used over 100 MB. Tap LOW DATA to save your hotspot.', 8000);
     voice.alert('trip', 'This app has used over 100 megabytes of hotspot data.');
   }
+}
+
+function updateStatus() {
+  const fresh = lastFix && Date.now() - lastFixAt < GPS_STALE_MS;
+  const speed = fresh && lastFix.speed !== null ? Math.round(lastFix.speed * MPS_TO_MPH) : null;
+  $('speed').textContent = speed === null ? '--' : String(speed);
+  $('gps-state').textContent = !fresh ? 'NO GPS' : lastFix.source === 'demo' ? 'DEMO GPS' : 'GPS OK';
   engine.paint();
   const silentFor = Date.now() - Math.max(lastFixAt, visibleSince);
   if (appVisible && !gpsLostSpoken && lastFix && lastFix.source === 'truck' && silentFor > GPS_LOST_MS) {
@@ -215,19 +219,11 @@ function applySettings() {
     map.dragging.enable();
   }
   updateStatus();
-}
-
-// Some GPS units report no speed. Then speed comes from the last two fixes,
-// so "stopped" (truck check, parked-only setup) is never assumed while driving.
-function withSpeed(fix, prev, prevAt) {
-  if (fix.speed !== null || !prev) return fix;
-  const seconds = (Date.now() - prevAt) / 1000;
-  if (seconds < 0.5 || seconds > GPS_STALE_MS / 1000) return fix;
-  return Object.assign({}, fix, { speed: distanceM(prev, fix) / seconds });
+  updateData();
 }
 
 function onFix(raw) {
-  const fix = withSpeed(raw, lastFix, lastFixAt);
+  const fix = withSpeed(raw, lastFix, lastFixAt, Date.now());
   lastFix = fix;
   lastFixAt = Date.now();
   if (gpsLostSpoken) {
@@ -235,8 +231,12 @@ function onFix(raw) {
     voice.alert('link', 'GPS is back.');
   }
   truck.update(fix);
-  routing.update(fix);
   // Add-ons must never stop the speed, the moving flag, the status or each other.
+  try {
+    routing.update(fix);
+  } catch (err) {
+    console.warn('route:', err);
+  }
   try {
     alerts.onFix(fix);
   } catch (err) {
@@ -265,7 +265,10 @@ function onFix(raw) {
 }
 
 const gps = createGps(onFix);
-setInterval(updateStatus, GPS_STALE_MS);
+setInterval(() => {
+  updateStatus();
+  updateData();
+}, GPS_STALE_MS);
 
 function toggle(name) {
   return () => {
@@ -307,6 +310,9 @@ function openEngine() {
 $('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, memoryText, openVoice, openDetector, openEngine }));
 $('btn-recenter').addEventListener('click', () => truck.setFollowing(true));
 $('btn-sheet-close').addEventListener('click', closeSheet);
-map.on('contextmenu', (e) => routing.confirmPoint(e.latlng));
+// A long press asks "Drive here?", but never while moving: that sheet needs a tap to close (#54).
+map.on('contextmenu', (e) => {
+  if (!moving) routing.confirmPoint(e.latlng);
+});
 
 applySettings();
