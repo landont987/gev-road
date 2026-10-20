@@ -45,6 +45,7 @@ import okhttp3.ResponseBody;
  *  - api.openai.com (spoken alerts, see Speech) and generativelanguage.googleapis.com (the AI
  *    truck check) take the driver's keys in headers the page should not have
  *    to send cross-origin.
+ *  - overpass-api.de (speed and red-light cameras) also only speaks TLS 1.3.
  *  - az511.com camera pictures: scripted requests get two
  *    Access-Control-Allow-Origin values, which browsers reject, so the AI truck
  *    check fetches the picture bytes here.
@@ -63,6 +64,7 @@ final class NativeHttp {
             {"api.openai.com", "POST"},
             {"generativelanguage.googleapis.com", "POST"},
             {"az511.com", "GET"},
+            {"overpass-api.de", "GET"},
     };
     private static final int TIMEOUT_MS = 20000;
     private static final int MAX_TIMEOUT_MS = 90000;
