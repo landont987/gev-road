@@ -11,6 +11,8 @@ import BUNDLED from './data/az-speed-cameras.json';
 
 const CACHE_KEY = 'gev-road-speed-cameras';
 const RETRY_MS = 10 * 60 * 1000;
+// A busy Overpass queues the query: 33 s on 2026-10-20 (its own limit is 30 s).
+const OVERPASS_TIMEOUT_MS = 60000;
 
 export function createSpeedCameras() {
   const cached = readCache(CACHE_KEY, SPEED_CAMERAS_TTL_MS);
@@ -27,7 +29,7 @@ export function createSpeedCameras() {
     loading = true;
     // overpass-api.de only speaks TLS 1.3 (checked 2026-10-20), which Android 9's
     // WebView cannot, so on the truck the Android app fetches it (nativeFetch).
-    nativeFetch(`${OVERPASS_URL}?data=${encodeURIComponent(SPEED_CAMERAS_QUERY)}`, 30000)
+    nativeFetch(`${OVERPASS_URL}?data=${encodeURIComponent(SPEED_CAMERAS_QUERY)}`, OVERPASS_TIMEOUT_MS)
       .then((res) => {
         if (!res.ok) throw new Error(`speed cameras HTTP ${res.status}`);
         return res.json();

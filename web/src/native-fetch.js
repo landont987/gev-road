@@ -78,8 +78,15 @@ function viaApp(timeoutMs, start) {
 /** init: { method, headers: { Authorization, 'Content-Type' }, body } */
 export function nativeFetch(url, timeoutMs, init) {
   const options = init || {};
-  if (!hasNativeHttp()) return fetchWithTimeout(previewUrl(url), timeoutMs, options);
   const headers = options.headers || {};
+  // httpEx carries the timeout to the app; http() always gave up after 20 s.
+  if (hasNativeRequest()) {
+    const pass = {};
+    if (headers.Authorization) pass.Authorization = headers.Authorization;
+    if (headers['Content-Type']) pass['Content-Type'] = headers['Content-Type'];
+    return nativeRequest(url, timeoutMs, { method: options.method || 'GET', headers: pass, body: options.body });
+  }
+  if (!hasNativeHttp()) return fetchWithTimeout(previewUrl(url), timeoutMs, options);
   return viaApp(timeoutMs, (id) =>
     window.GevNative.http(
       id,
