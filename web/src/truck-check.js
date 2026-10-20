@@ -18,6 +18,10 @@ import {
   base64FromBytes,
   truckCheckBody,
   parseTruckCheck,
+  vehicleListBody,
+  parseVehicleList,
+  plausibleVehicles,
+  confirmMatch,
   apiErrorText,
   isPermanentApiError,
   pictureTakenAt,
@@ -113,12 +117,8 @@ export function createTruckCheck(deps) {
       });
   }
 
-  function askGemini(picture, ref) {
-    const body = truckCheckBody({
-      camera: { base64: picture.base64, mediaType: picture.mediaType },
-      reference: ref,
-      description: KEYS.truckDescription,
-    });
+  /** One Gemini request -> its JSON answer; HTTP errors carry a plain reason and whether a retry can help. */
+  function geminiJson(body) {
     return nativeRequest(GEMINI_URL, AI_TIMEOUT_MS, {
       method: 'POST',
       headers: { 'x-goog-api-key': KEYS.gemini, 'Content-Type': 'application/json' },
@@ -131,14 +131,36 @@ export function createTruckCheck(deps) {
           err.permanent = isPermanentApiError(res.status, text);
           throw err;
         }
-        let json;
         try {
-          json = JSON.parse(text);
+          return JSON.parse(text);
         } catch (e) {
           throw new Error("Gemini's answer could not be read.");
         }
-        return parseTruckCheck(json);
       });
+  }
+
+  /**
+   * Two looks. First Gemini lists the vehicles in the picture without being
+   * told about the truck (told, it saw the truck in a white dump truck). Only
+   * when one could be the truck (color, body) does it compare with the
+   * driver's photo, and its match must be one of those vehicles.
+   */
+  function askGemini(picture, ref) {
+    const camera = { base64: picture.base64, mediaType: picture.mediaType };
+    return geminiJson(vehicleListBody({ camera })).then((listJson) => {
+      const seen = parseVehicleList(listJson);
+      const maybe = plausibleVehicles(seen, KEYS.truckDescription);
+      if (!maybe.length) return { found: false, confidence: 'high', box: null, note: seenText(seen) };
+      return geminiJson(truckCheckBody({ camera, reference: ref, description: KEYS.truckDescription })).then((json) =>
+        confirmMatch(parseTruckCheck(json, KEYS.truckDescription), maybe),
+      );
+    });
+  }
+
+  /** "Saw: white semi truck, silver car." for the result panel. */
+  function seenText(seen) {
+    if (!seen.length) return 'No vehicles in the picture.';
+    return `Saw: ${seen.map((v) => `${v.color} ${v.body}`.trim()).join(', ')}.`;
   }
 
   function warn(err) {

@@ -27,14 +27,23 @@ globalThis.__KEYS__ = { gemini: 'test-key', truckDescription: 'red 2014 Toyota T
 let clock = 0;
 Date.now = () => clock;
 
-const calls = []; // { kind: 'picture' | 'gemini', url, headers }
+const calls = []; // { kind: 'picture' | 'list' | 'gemini', url, headers }
+// The first look (vehicleListBody) answers from this; by default a red pickup
+// where SEEN boxes the truck, so the comparison (kind 'gemini') runs.
+const LIST_RED = '{"vehicles": [{"color": "red", "body": "pickup", "box_2d": [400, 300, 600, 500]}]}';
+const LIST_SEMI = '{"vehicles": [{"color": "white", "body": "semi truck", "box_2d": [363, 76, 407, 110]}]}';
+let listAnswer = LIST_RED;
 let pictures = []; // answers for picture requests, in order: { base64, age }
 let geminiAnswers = []; // answers for Gemini requests, in order: model text
 globalThis.window = {
   GevNative: {
-    httpEx(id, method, url, headersJson) {
+    httpEx(id, method, url, headersJson, body) {
       const headers = JSON.parse(headersJson);
-      if (url.indexOf('https://az511.com/') === 0) {
+      if (body && body.indexOf('You list the vehicles') >= 0) {
+        calls.push({ kind: 'list', url, headers });
+        const answer = JSON.stringify({ candidates: [{ content: { parts: [{ text: listAnswer }] }, finishReason: 'STOP' }] });
+        setImmediate(() => window.gevOnHttp(id, 200, answer, -1));
+      } else if (url.indexOf('https://az511.com/') === 0) {
         calls.push({ kind: 'picture', url, headers });
         const p = pictures.shift();
         setImmediate(() => window.gevOnHttp(id, 200, p.base64, p.age));
@@ -54,7 +63,7 @@ const { createTruckCheck } = await import('../web/src/truck-check.js');
 const jpeg = fs.readFileSync(new URL('./fixtures/adot-960-head.jpg', import.meta.url));
 const picture = (tag) => Buffer.concat([jpeg, Buffer.from(tag)]).toString('base64');
 const NOT_SEEN = '{"found": false, "confidence": "high", "box_2d": null, "note": "No red pickups."}';
-const SEEN = '{"found": true, "confidence": "high", "box_2d": [400, 300, 600, 500], "note": "Left lane."}';
+const SEEN = '{"candidate": {"color": "red", "body": "pickup"}, "found": true, "confidence": "high", "box_2d": [400, 300, 600, 500], "note": "Left lane."}';
 
 const CAM = { id: '960', name: 'I-10 @Tunnel EB', lat: 33.45, lon: -112.07, imageUrl: 'https://az511.com/map/Cctv/960' };
 const stopped = { source: 'truck', lat: 33.4505, lon: -112.0705, speed: 0, bearing: null };
@@ -74,6 +83,7 @@ beforeEach(() => {
   pictures = [];
   geminiAnswers = [];
   said = [];
+  listAnswer = LIST_RED;
   check = createTruckCheck({
     app: { isMoving: () => false, isLowData: () => false, isOnline: () => true },
     cameras: { list: () => [CAM] },
@@ -89,7 +99,8 @@ async function fixAt(ms, fix) {
   await flush();
 }
 
-const kinds = () => calls.map((c) => c.kind);
+// The first look happens before every comparison; these timing tests count pictures and comparisons.
+const kinds = () => calls.filter((c) => c.kind !== 'list').map((c) => c.kind);
 
 test('checks 3 seconds after the stop, then again the moment the camera posts its next picture', async () => {
   pictures = [
@@ -106,14 +117,14 @@ test('checks 3 seconds after the stop, then again the moment the camera posts it
   assert.equal(calls[1].headers['x-goog-api-key'], 'test-key');
   // The old picture was taken at 983000, so the next one is up at 1013000.
   await fixAt(1010000);
-  assert.equal(calls.length, 2, 'waits for the next picture instead of polling');
+  assert.equal(kinds().length, 2, 'waits for the next picture instead of polling');
   await fixAt(1014500);
   assert.deepEqual(kinds(), ['picture', 'gemini', 'picture', 'gemini']);
   assert.equal(said.length, 1);
   assert.match(said[0], /Your truck may be on the I 10 at Tunnel eastbound camera/);
   await fixAt(1030000);
   await fixAt(1060000);
-  assert.equal(calls.length, 4, 'nothing more at this stop');
+  assert.equal(kinds().length, 4, 'nothing more at this stop');
 });
 
 test('a late new picture is looked at again 5 seconds later; the same picture never goes to Gemini twice', async () => {
@@ -128,7 +139,7 @@ test('a late new picture is looked at again 5 seconds later; the same picture ne
   await fixAt(1009500); // 978000 + 30000 + 1500
   assert.deepEqual(kinds(), ['picture', 'gemini', 'picture']);
   await fixAt(1012000);
-  assert.equal(calls.length, 3);
+  assert.equal(kinds().length, 3);
   await fixAt(1014500);
   assert.deepEqual(kinds(), ['picture', 'gemini', 'picture', 'picture', 'gemini']);
   assert.equal(said.length, 0);
@@ -209,4 +220,15 @@ test('a match found while still stopped opens the result panel', async () => {
   await fixAt(1003000);
   assert.equal(said.length, 1);
   assert.equal(document.getElementById('sheet').hidden, false);
+});
+
+test('a picture with no vehicle that could be the truck is not compared and never spoken', async () => {
+  listAnswer = LIST_SEMI; // the white dump truck Gemini once called "a red Toyota Tundra"
+  pictures = [{ base64: picture('fresh'), age: 1 }];
+  geminiAnswers = [SEEN]; // would say "found" if it were asked
+  await fixAt(1000000);
+  await fixAt(1003000);
+  assert.deepEqual(calls.map((c) => c.kind), ['picture', 'list'], 'no comparison request');
+  assert.equal(said.length, 0);
+  assert.match(check.lastText(), /not seen/);
 });
