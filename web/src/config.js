@@ -52,7 +52,7 @@ export const BCFY_TOKEN_TTL_S = 3600;
 export const CAMERA_LIST_TTL_MS = 24 * 60 * 60 * 1000;
 export const ALPR_TILE_TTL_MS = 60 * 60 * 1000;
 
-// Below this speed the truck counts as stopped and camera pictures may load.
+// Below this speed the truck counts as stopped (the AI truck check and the parked-only setup screens).
 export const MOVING_SPEED_MPS = 2.2; // about 5 mph
 export const OFF_ROUTE_M = 150;
 export const OFF_ROUTE_FIXES = 3;

@@ -228,10 +228,6 @@ export function createTruckCheck(deps) {
   function renderPicture(box) {
     box.textContent = '';
     if (!last || !last.picture) return;
-    if (app.isMoving()) {
-      box.appendChild(el('div', { class: 'note' }, 'The picture shows when the truck is stopped.'));
-      return;
-    }
     const snap = el('div', { class: 'snap' });
     snap.appendChild(el('img', { class: 'cam-img', alt: last.cam.name, src: `data:${last.picture.mediaType};base64,${last.picture.base64}` }));
     const r = last.result.box;

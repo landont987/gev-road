@@ -1,6 +1,6 @@
 // Arizona ADOT traffic cameras: dots on the map, picture on tap.
-// Pictures are ~170 KB each, so they load only on a tap, only while the
-// truck is stopped, and never in low data mode.
+// Pictures are ~170 KB each, so they load only on a tap (moving or stopped,
+// Landon 10/20) and never in low data mode.
 
 import L from 'leaflet';
 import { KEYS, AZ_CAMERAS_URL, AZ511_API_CAMERAS_URL, AZ511_IMAGE_URL, CAMERA_LIST_TTL_MS } from './config.js';
@@ -144,8 +144,6 @@ export function createCameras(map, app) {
     pictureBox.textContent = '';
     if (app.isLowData()) {
       pictureBox.appendChild(el('div', { class: 'note' }, 'Low data is on, so pictures are off to save your hotspot.'));
-    } else if (app.isMoving()) {
-      pictureBox.appendChild(el('div', { class: 'note' }, 'Pictures show when the truck is stopped.'));
     } else if (autoLoad) {
       loadPicture(cam);
     } else {

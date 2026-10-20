@@ -207,7 +207,7 @@ function applySettings() {
 }
 
 // Some GPS units report no speed. Then speed comes from the last two fixes,
-// so "stopped" (camera pictures allowed) is never assumed while driving.
+// so "stopped" (truck check, parked-only setup) is never assumed while driving.
 function withSpeed(fix, prev, prevAt) {
   if (fix.speed !== null || !prev) return fix;
   const seconds = (Date.now() - prevAt) / 1000;
