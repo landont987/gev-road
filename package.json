@@ -1,6 +1,6 @@
 {
   "name": "gev-road",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "private": true,
   "description": "Lightweight 2D road map for an Android 9 head unit, built from God's Eye View's data sources.",
   "license": "MIT",

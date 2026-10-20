@@ -5,6 +5,10 @@ and `version` in `package.json`, so the ☰ menu's VERSION line tells builds apa
 Each version below has a git tag (`v0.3.9`, ...). APKs are never committed or
 uploaded: the API keys are built into them.
 
+## 0.3.12 (2026-10-20)
+Smoothness pass, part two (profile and findings in docs/PERF-2026-10-20.md).
+- Map tiles stay on the unit for 30 days: a familiar route loads from disk, a hotspot drop shows the saved tiles instead of grey squares, and less hotspot data goes to tiles. 150 MB cap, oldest tiles go first. A stalled hotspot pauses tile fetches for 30 s so the page never waits on them.
+
 ## 0.3.11 (2026-10-20)
 Smoothness pass before the first head-unit test.
 - The map keeps DOM markers only for the dots on screen plus half a screen of margin (22 at drive zoom instead of about 1,070), so each GPS recenter moves far fewer elements on the head unit. Spoken alerts and the truck check still use the full lists.
