@@ -207,7 +207,10 @@ final class RadioDrawer {
     }
 
     void close() {
-        dropWeb(); // their page and its caches go with it; the sign-in cookie stays (CookieManager)
+        // Their page and its caches go with the WebView; the sign-in cookie stays (CookieManager),
+        // saved now in case the app is killed before the next pause.
+        CookieManager.getInstance().flush();
+        dropWeb();
         root.setVisibility(View.GONE);
         report(0);
         if (onClosed != null) onClosed.run();

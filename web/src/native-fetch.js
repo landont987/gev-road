@@ -21,7 +21,11 @@ const PULL_TIMEOUT_MS = 30000; // reading a kept answer from the app, off the UI
  */
 function onNativeAnswer(id, status, body, ageSeconds, pull) {
   const entry = pending[id];
-  if (!entry) return;
+  if (!entry) {
+    // The page gave up first: take the kept body anyway, so the app does not hold it.
+    if (pull) fetchWithTimeout(`/native/http/${id}`, PULL_TIMEOUT_MS).catch(() => {});
+    return;
+  }
   delete pending[id];
   clearTimeout(entry.timer);
   if (!pull) {

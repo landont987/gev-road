@@ -394,15 +394,8 @@ final class Speech {
             utterances.put(id, done);
         }
         try {
-            engine.setAudioAttributes(GUIDANCE);
-            if (engine.speak(text, TextToSpeech.QUEUE_ADD, null, id) != TextToSpeech.SUCCESS) {
-                // Its process was probably killed for memory: build it again for the next alert (#61).
-                Log.w(TAG, "the built-in voice refused an alert; starting it again");
+            if (!speakOrRebuild(text, id)) {
                 report("tts-failed");
-                TextToSpeech old = engine;
-                languageChecked = false;
-                engine = createEngine();
-                old.shutdown();
                 return;
             }
             waiting = done;
@@ -417,6 +410,32 @@ final class Speech {
             audio.abandonAudioFocusRequest(focus);
             listener.onSpeaking(false);
         }
+    }
+
+    /**
+     * Hands the text to the engine. A refusal usually means its process was
+     * killed for memory: the engine is built again, and this same alert is
+     * tried once more on the new one (#61), so the alert that found the dead
+     * engine is not the one that goes unsaid.
+     */
+    private boolean speakOrRebuild(String text, String id) {
+        engine.setAudioAttributes(GUIDANCE);
+        if (engine.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS) return true;
+        Log.w(TAG, "the built-in voice refused an alert; starting it again");
+        TextToSpeech old = engine;
+        languageChecked = false;
+        engine = createEngine();
+        old.shutdown();
+        try {
+            if (!engineReady.await(ENGINE_WAIT_MS, TimeUnit.MILLISECONDS) || !engineOk) return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        languageChecked = true;
+        engine.setLanguage(Locale.US);
+        engine.setAudioAttributes(GUIDANCE);
+        return engine.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS;
     }
 
     private void finishUtterance(String id) {

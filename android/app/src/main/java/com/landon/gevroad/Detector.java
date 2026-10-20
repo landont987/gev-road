@@ -272,7 +272,7 @@ final class Detector {
         return null;
     }
 
-    /** Start reading a board Android allows. retried: this is the one retry after a failed claim. */
+    /** Start reading a board Android allows. attempt counts failed claims so far (CLAIM_TRIES in all). */
     private void open(UsbDevice device, int attempt) {
         if (reader != null) {
             // One board at a time: tapping CONNECT again only refreshes the status.
