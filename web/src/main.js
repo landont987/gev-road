@@ -13,6 +13,7 @@ import {
 } from './config.js';
 import { $, setOn, toast, closeSheet, openSheetKind } from './ui.js';
 import { withSpeed } from './fix-logic.js';
+import { gpsShortText, gpsMenuText, gpsSpokenProblem } from './gps-logic.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { createGps } from './gps.js';
 import { createTruck } from './truck.js';
@@ -181,7 +182,7 @@ function updateStatus() {
   const fresh = lastFix && Date.now() - lastFixAt < GPS_STALE_MS;
   const speed = fresh && lastFix.speed !== null ? Math.round(lastFix.speed * MPS_TO_MPH) : null;
   $('speed').textContent = speed === null ? '--' : String(speed);
-  $('gps-state').textContent = !fresh ? 'NO GPS' : lastFix.source === 'demo' ? 'DEMO GPS' : 'GPS OK';
+  $('gps-state').textContent = !fresh ? gpsShortText(gps.status()) : lastFix.source === 'demo' ? 'DEMO GPS' : 'GPS OK';
   engine.paint();
   const silentFor = Date.now() - Math.max(lastFixAt, visibleSince);
   if (appVisible && !gpsLostSpoken && lastFix && lastFix.source === 'truck' && silentFor > GPS_LOST_MS) {
@@ -264,7 +265,27 @@ function onFix(raw) {
   updateStatus();
 }
 
-const gps = createGps(onFix);
+const startedAt = Date.now();
+let gpsProblemSpoken = '';
+// The app's GPS state (#64): the status card shows it while there is no fix, and a
+// GPS that cannot work (location off, permission refused) is spoken once.
+function onGpsStatus(status) {
+  updateStatus();
+  const problem = gpsSpokenProblem(status);
+  if (problem !== gpsProblemSpoken) {
+    gpsProblemSpoken = problem; // '' once it clears, so the same problem is spoken again if it returns
+    if (problem) {
+      toast(problem, 8000);
+      voice.alert('link', problem);
+    }
+  }
+}
+const gps = createGps(onFix, { onStatus: onGpsStatus, onLastKnown: (where) => truck.setStart(where) });
+// The app started its GPS before this page loaded: its first pushes were lost, so ask once now.
+if (gps.hasTruckGps()) onGpsStatus(gps.readStatus());
+function gpsText() {
+  return gpsMenuText(gps.readStatus(), Math.round((Date.now() - startedAt) / 1000));
+}
 setInterval(() => {
   updateStatus();
   updateData();
@@ -307,7 +328,7 @@ detector.onStateChange(() => {
 function openEngine() {
   openEnginePanel({ engine, isMoving: () => moving });
 }
-$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, memoryText, openVoice, openDetector, openEngine }));
+$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, memoryText, gpsText, openVoice, openDetector, openEngine }));
 $('btn-recenter').addEventListener('click', () => truck.setFollowing(true));
 $('btn-sheet-close').addEventListener('click', closeSheet);
 // A long press asks "Drive here?", but never while moving: that sheet needs a tap to close (#54).

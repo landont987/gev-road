@@ -40,7 +40,12 @@ export function memoryText(json) {
   return parts.join(' ');
 }
 
-/** app: { gps, traffic, routing, dataText(), memoryText(), openVoice(), openDetector(), openEngine() } */
+/** The app's own Location settings screen, when the Android app offers it (#64). */
+function canOpenLocationSettings() {
+  return !!(window.GevNative && typeof window.GevNative.openLocationSettings === 'function');
+}
+
+/** app: { gps, traffic, routing, dataText(), memoryText(), gpsText(), openVoice(), openDetector(), openEngine() } */
 export function openMenu(app) {
   const body = openSheet('menu', 'Menu');
   const gps = app.gps;
@@ -53,6 +58,15 @@ export function openMenu(app) {
   body.appendChild(
     el('p', { class: 'sheet-sub' }, gps.source() === 'truck' ? 'Using the truck GPS.' : 'Using the demo drive (fake GPS).'),
   );
+  if (gps.hasTruckGps()) {
+    body.appendChild(el('p', { class: 'sheet-sub' }, app.gpsText()));
+    const status = gps.status();
+    if (status && status.permission && !status.locationOn && canOpenLocationSettings()) {
+      body.appendChild(
+        el('button', { class: 'pill wide', onclick: () => window.GevNative.openLocationSettings() }, 'OPEN LOCATION SETTINGS'),
+      );
+    }
+  }
   if (gps.hasTruckGps()) {
     body.appendChild(
       el('button', { class: 'pill wide', onclick: () => { gps.useTruck(); closeSheet(); } }, 'USE TRUCK GPS'),

@@ -13,15 +13,17 @@ const DEMO_END = { lat: 33.672, lon: -112.116 }; // I-17 at Deer Valley
 const DEMO_SPEEDUP = 2; // the screen moves 2x faster than the speed shown
 const FIX_EVERY_MS = 1000;
 
-export function createGps(onFix) {
+/** hooks: { onStatus(status), onLastKnown({lat, lon, ageS}) }, both optional. */
+export function createGps(onFix, hooks = {}) {
   let source = window.GevNative ? 'truck' : 'demo';
   let demoTimer = null;
   let demoRoute = null; // the route being driven
   let stockRoute = null; // the I-17 trip, fetched once
   let demoAlong = 0;
   let demoDriving = false;
+  let status = null; // the app's GPS state (GpsWatch.statusJson), null on a computer
 
-  window.gevOnLocation = (lat, lon, speed, bearing, accuracy) => {
+  window.gevOnLocation = (lat, lon, speed, bearing, accuracy, provider) => {
     if (source !== 'truck') return;
     onFix({
       lat,
@@ -29,9 +31,50 @@ export function createGps(onFix) {
       speed: speed >= 0 ? speed : null,
       bearing: bearing >= 0 ? bearing : null,
       accuracy,
+      provider: provider || '',
       source: 'truck',
     });
   };
+
+  let lastKnownShown = false;
+
+  // Where the truck was last seen (up to hours ago): the start view, not a live fix.
+  function showLastKnown(lat, lon, ageS) {
+    if (source !== 'truck' || !hooks.onLastKnown || lastKnownShown) return;
+    lastKnownShown = true;
+    hooks.onLastKnown({ lat, lon, ageS: Number(ageS) || 0 });
+  }
+
+  function applyStatus(json) {
+    try {
+      status = typeof json === 'string' ? JSON.parse(json) : json;
+    } catch (err) {
+      console.warn('gps status:', err);
+      return false;
+    }
+    // The app's first pushes land before this page exists, so the state also carries the parked spot.
+    if (status && status.lastKnown) showLastKnown(status.lastKnown.lat, status.lastKnown.lon, status.lastKnown.ageS);
+    return true;
+  }
+
+  // Why there is no fix: the location setting, the permission, the satellites (#64).
+  window.gevOnGpsStatus = (json) => {
+    if (applyStatus(json) && hooks.onStatus) hooks.onStatus(status);
+  };
+
+  window.gevOnLastKnown = showLastKnown;
+
+  /** The app's GPS state, read fresh (a bridge call: at start and when the menu opens), else the last pushed one. */
+  function readStatus() {
+    if (window.GevNative && typeof window.GevNative.gpsStatusJson === 'function') {
+      try {
+        applyStatus(window.GevNative.gpsStatusJson());
+      } catch (err) {
+        console.warn('gps status:', err);
+      }
+    }
+    return status;
+  }
 
   function demoTick() {
     if (!demoRoute) {
@@ -95,6 +138,8 @@ export function createGps(onFix) {
   return {
     source: () => source,
     hasTruckGps: () => !!window.GevNative,
+    status: () => status,
+    readStatus,
     demoDrive,
     demoPark,
     demoRestart,

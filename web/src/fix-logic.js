@@ -13,6 +13,8 @@ const MAX_GAP_S = 5; // after a GPS dropout the distance covered is not a speed
  */
 export function withSpeed(fix, prev, prevAt, nowMs) {
   if (fix.speed !== null || !prev) return fix;
+  // Two providers (gps, network) can sit a kilometre apart: the jump between them is not a speed.
+  if ((fix.provider || '') !== (prev.provider || '')) return fix;
   const seconds = (nowMs - prevAt) / 1000;
   if (seconds < MIN_GAP_S) {
     // Carry a measured speed once, never a carried one: a unit sending fixes faster
