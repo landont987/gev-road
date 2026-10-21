@@ -70,7 +70,10 @@ export function makeResponse(status, body, ageSeconds) {
 /** The computer preview (scripts/dev.mjs) relays az511.com, which sends no CORS header. */
 function previewUrl(url) {
   const local = typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-  return local && url.indexOf('https://az511.com/') === 0 ? `/az511/${url.slice('https://az511.com/'.length)}` : url;
+  if (!local) return url;
+  if (url.indexOf('https://az511.com/') === 0) return `/az511/${url.slice('https://az511.com/'.length)}`;
+  if (url.indexOf('https://api.bcfy.io/') === 0) return `/bcfy/${url.slice('https://api.bcfy.io/'.length)}`;
+  return url;
 }
 
 export function hasNativeHttp() {

@@ -69,3 +69,18 @@ test('spoken problem: only for a GPS that cannot work, never while searching', (
   assert.match(gpsSpokenProblem(status({ permission: false })), /refused/);
   assert.match(gpsSpokenProblem(status({ providers: ['passive'] })), /no GPS receiver/);
 });
+
+test('gpsHelp: plain words for every reason there is no position', async () => {
+  const { gpsHelp } = await import('../web/src/gps-logic.js');
+  assert.equal(gpsHelp(null, 999), null, 'a computer has nothing to say');
+  assert.match(gpsHelp(status({ permission: false }), 5).title, /permission/);
+  const off = gpsHelp(status({ locationOn: false }), 5);
+  assert.match(off.title, /turned off/);
+  assert.equal(off.settings, true);
+  assert.match(gpsHelp(status({ providers: ['network', 'passive'] }), 5).title, /no GPS receiver/);
+  assert.equal(gpsHelp(status({ enabled: ['passive'] }), 5).settings, true);
+  assert.match(gpsHelp(status(), 30).title, /Looking/, 'early on it just says it is looking');
+  assert.match(gpsHelp(status(), NO_SATELLITES_WARN_S).body, /antenna/, 'two minutes with no satellite: check the antenna');
+  assert.equal(gpsHelp(status({ satellites: 7, used: 2 }), 300).title, 'Finding your position: 2 of 4 satellites');
+  assert.equal(gpsHelp(status({ satellites: 9, used: 3 }), 300).key, 'finding', 'the key stays put as the count changes');
+});

@@ -11,9 +11,9 @@ import {
   MOVING_SPEED_MPS,
   DATA_WARN_BYTES,
 } from './config.js';
-import { $, setOn, toast, closeSheet, openSheetKind } from './ui.js';
+import { $, setOn, toast, closeSheet, openSheetKind, makeSwipeable } from './ui.js';
 import { withSpeed } from './fix-logic.js';
-import { gpsShortText, gpsMenuText, gpsSpokenProblem } from './gps-logic.js';
+import { gpsShortText, gpsMenuText, gpsSpokenProblem, gpsHelp } from './gps-logic.js';
 import { swipeStats, screenText } from './swipe-logic.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { createGps } from './gps.js';
@@ -286,11 +286,16 @@ function onFix(raw) {
 }
 
 const startedAt = Date.now();
+// GPS help card state, declared before the first status call below can reach it.
+const GPS_HELP_AFTER_MS = 20000; // a warm start usually has a fix by then
+let gpsHelpKey = ''; // the problem on screen, '' when hidden
+let gpsHelpDismissed = ''; // the problem the driver swiped away
 let gpsProblemSpoken = '';
 // The app's GPS state (#64): the status card shows it while there is no fix, and a
 // GPS that cannot work (location off, permission refused) is spoken once.
 function onGpsStatus(status) {
   updateStatus();
+  updateGpsHelp();
   const problem = gpsSpokenProblem(status);
   if (problem !== gpsProblemSpoken) {
     gpsProblemSpoken = problem; // '' once it clears, so the same problem is spoken again if it returns
@@ -306,10 +311,48 @@ if (gps.hasTruckGps()) onGpsStatus(gps.readStatus());
 function gpsText() {
   return gpsMenuText(gps.readStatus(), Math.round((Date.now() - startedAt) / 1000));
 }
+
+// The GPS help card (#64): on the truck, while there is no fresh truck fix, it says
+// why in plain words (no receiver, location off, antenna unplugged, still finding).
+// It needs no tap; a swipe hides it until the problem changes.
+function hideGpsHelp() {
+  $('gpshelp').hidden = true;
+  gpsHelpKey = '';
+}
+makeSwipeable(
+  $('gpshelp'),
+  (key) => {
+    gpsHelpDismissed = key || gpsHelpKey;
+    hideGpsHelp();
+  },
+  () => gpsHelpKey,
+);
+$('gpshelp-settings').addEventListener('click', () => {
+  if (window.GevNative && typeof window.GevNative.openLocationSettings === 'function') window.GevNative.openLocationSettings();
+});
+function updateGpsHelp() {
+  const fresh = lastFix && lastFix.source === 'truck' && Date.now() - lastFixAt < GPS_STALE_MS;
+  const help =
+    gps.hasTruckGps() && gps.source() === 'truck' && !fresh && Date.now() - startedAt >= GPS_HELP_AFTER_MS
+      ? gpsHelp(gps.status(), Math.round((Date.now() - startedAt) / 1000))
+      : null;
+  if (!help || help.key === gpsHelpDismissed) {
+    if (gpsHelpKey) hideGpsHelp();
+    return;
+  }
+  // Only touch the DOM when the words change, so the 5 s tick costs nothing.
+  if (help.key === gpsHelpKey && $('gpshelp-title').textContent === help.title) return;
+  $('gpshelp-title').textContent = help.title;
+  $('gpshelp-body').textContent = help.body;
+  $('gpshelp-settings').hidden = !help.settings || !(window.GevNative && typeof window.GevNative.openLocationSettings === 'function');
+  $('gpshelp').hidden = false;
+  gpsHelpKey = help.key;
+}
 setInterval(() => {
   try {
     // GPS dropped to network-only (no speed) after driving: don't stay "moving" forever.
     if (moving && lastSpeedAt && Date.now() - lastSpeedAt > MOVING_CLEAR_MS) setMoving(false);
+    updateGpsHelp();
     updateStatus();
     updateData();
   } catch (err) {

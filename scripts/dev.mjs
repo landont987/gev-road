@@ -19,14 +19,21 @@ const ctx = await esbuild.context({ ...buildOptions, minify: false, sourcemap: '
 await ctx.watch();
 const inner = await ctx.serve({ servedir: path.dirname(buildOptions.outfile), port: PORT + 1, host: '127.0.0.1' });
 
-// az511.com sends no CORS header, so the preview page reaches it through this
-// relay at /az511/ (on the truck, the Android app makes the request instead).
+// az511.com sends no CORS header and api.bcfy.io answers browser preflights with
+// 401, so the preview page reaches them through these relays at /az511/ and
+// /bcfy/ (on the truck, the Android app makes the request instead). Preview only.
+const RELAYS = [
+  { prefix: '/az511/', origin: 'https://az511.com/', pass: [] },
+  { prefix: '/bcfy/', origin: 'https://api.bcfy.io/', pass: ['authorization', 'content-type', 'content-length'] },
+];
 http
   .createServer((req, res) => {
-    const relay = req.url.startsWith('/az511/');
-    const target = relay ? `https://az511.com/${req.url.slice('/az511/'.length)}` : `http://127.0.0.1:${inner.port}${req.url}`;
+    const relay = RELAYS.find((r) => req.url.startsWith(r.prefix));
+    const target = relay ? `${relay.origin}${req.url.slice(relay.prefix.length)}` : `http://127.0.0.1:${inner.port}${req.url}`;
     const send = relay ? https : http;
-    const out = send.request(target, { method: req.method, headers: relay ? { 'user-agent': 'GEVRoad-preview' } : req.headers }, (answer) => {
+    const headers = relay ? { 'user-agent': 'GEVRoad-preview' } : req.headers;
+    if (relay) for (const name of relay.pass) if (req.headers[name]) headers[name] = req.headers[name];
+    const out = send.request(target, { method: req.method, headers }, (answer) => {
       res.writeHead(answer.statusCode, answer.headers);
       answer.pipe(res);
     });
