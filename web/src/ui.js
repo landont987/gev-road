@@ -1,6 +1,8 @@
 // Small DOM helpers. Text always goes in through textContent, never innerHTML,
 // because camera names and search results come from outside sources.
 
+import { swipeResult, isDrag, exitTransform, dragOpacity } from './swipe-dismiss-logic.js';
+
 export const $ = (id) => document.getElementById(id);
 
 /** el('div', { class: 'x', onclick: fn }, 'text', childNode) */
@@ -45,9 +47,84 @@ export function closeSheet() {
 
 export const openSheetKind = () => sheetKind;
 
+/**
+ * Let a notification be flicked away with a finger (#swipe-dismiss). The element
+ * follows the drag; released past the threshold it slides off and onDismiss()
+ * runs, otherwise it snaps back. Works with touch and with a mouse (the preview).
+ * onDismiss must hide the element; makeSwipeable only clears its own inline styles.
+ */
+export function makeSwipeable(el, onDismiss) {
+  let x0 = 0;
+  let y0 = 0;
+  let active = false;
+  const SNAP = 'opacity 0.2s ease-out, transform 0.2s ease-out';
+
+  function clearInline() {
+    el.style.transition = '';
+    el.style.transform = '';
+    el.style.opacity = '';
+  }
+
+  function start(x, y) {
+    active = true;
+    x0 = x;
+    y0 = y;
+    el.style.transition = 'none';
+  }
+
+  function move(x, y, ev) {
+    if (!active) return;
+    const dx = x - x0;
+    const dy = y - y0;
+    if (isDrag(dx, dy) && ev && ev.cancelable) ev.preventDefault(); // don't pan the map underneath
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    el.style.opacity = String(dragOpacity(dx, dy));
+  }
+
+  function end(x, y) {
+    if (!active) return;
+    active = false;
+    const r = swipeResult(x - x0, y - y0);
+    if (r.dismiss) {
+      el.style.transition = SNAP;
+      el.style.transform = exitTransform(r.axis, r.dir);
+      el.style.opacity = '0';
+      setTimeout(() => {
+        clearInline(); // reset before onDismiss hides it, so the next one shows fresh
+        onDismiss();
+      }, 200);
+    } else {
+      el.style.transition = SNAP;
+      el.style.transform = '';
+      el.style.opacity = '';
+      setTimeout(clearInline, 200);
+    }
+  }
+
+  el.addEventListener('touchstart', (e) => { const t = e.touches[0]; start(t.clientX, t.clientY); }, { passive: true });
+  el.addEventListener('touchmove', (e) => { const t = e.touches[0]; move(t.clientX, t.clientY, e); }, { passive: false });
+  el.addEventListener('touchend', (e) => { const t = (e.changedTouches && e.changedTouches[0]) || {}; end(t.clientX == null ? x0 : t.clientX, t.clientY == null ? y0 : t.clientY); });
+  // Mouse too, for the computer preview; window may be a bare stub under node tests.
+  el.addEventListener('mousedown', (e) => start(e.clientX, e.clientY));
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('mousemove', (e) => { if (active) move(e.clientX, e.clientY, e); });
+    window.addEventListener('mouseup', (e) => { if (active) end(e.clientX, e.clientY); });
+  }
+}
+
 let toastTimer = null;
+let toastSwipeWired = false;
+export function hideToast() {
+  clearTimeout(toastTimer);
+  $('toast').hidden = true;
+}
+
 export function toast(message, ms) {
   const node = $('toast');
+  if (!toastSwipeWired) {
+    makeSwipeable(node, hideToast); // flick it away instead of waiting (#swipe-dismiss)
+    toastSwipeWired = true;
+  }
   node.textContent = message;
   node.hidden = false;
   clearTimeout(toastTimer);
