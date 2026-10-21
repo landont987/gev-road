@@ -13,15 +13,17 @@ const DEMO_END = { lat: 33.672, lon: -112.116 }; // I-17 at Deer Valley
 const DEMO_SPEEDUP = 2; // the screen moves 2x faster than the speed shown
 const FIX_EVERY_MS = 1000;
 
-export function createGps(onFix) {
+/** hooks: { onStatus(status), onLastKnown({lat, lon, ageS}) }, both optional. */
+export function createGps(onFix, hooks = {}) {
   let source = window.GevNative ? 'truck' : 'demo';
   let demoTimer = null;
   let demoRoute = null; // the route being driven
   let stockRoute = null; // the I-17 trip, fetched once
   let demoAlong = 0;
   let demoDriving = false;
+  let status = null; // the app's GPS state (GpsWatch.statusJson), null on a computer
 
-  window.gevOnLocation = (lat, lon, speed, bearing, accuracy) => {
+  window.gevOnLocation = (lat, lon, speed, bearing, accuracy, provider) => {
     if (source !== 'truck') return;
     onFix({
       lat,
@@ -29,9 +31,39 @@ export function createGps(onFix) {
       speed: speed >= 0 ? speed : null,
       bearing: bearing >= 0 ? bearing : null,
       accuracy,
+      provider: provider || '',
       source: 'truck',
     });
   };
+
+  // Why there is no fix: the location setting, the permission, the satellites (#64).
+  window.gevOnGpsStatus = (json) => {
+    try {
+      status = typeof json === 'string' ? JSON.parse(json) : json;
+    } catch (err) {
+      console.warn('gps status:', err);
+      return;
+    }
+    if (hooks.onStatus) hooks.onStatus(status);
+  };
+
+  // Where the truck was last seen (up to hours ago): the start view, not a live fix.
+  window.gevOnLastKnown = (lat, lon, ageS) => {
+    if (source !== 'truck' || !hooks.onLastKnown) return;
+    hooks.onLastKnown({ lat, lon, ageS: Number(ageS) || 0 });
+  };
+
+  /** The app's GPS state, read fresh when the menu opens (a bridge call), else the last pushed one. */
+  function readStatus() {
+    if (window.GevNative && typeof window.GevNative.gpsStatusJson === 'function') {
+      try {
+        status = JSON.parse(window.GevNative.gpsStatusJson());
+      } catch (err) {
+        console.warn('gps status:', err);
+      }
+    }
+    return status;
+  }
 
   function demoTick() {
     if (!demoRoute) {
@@ -95,6 +127,8 @@ export function createGps(onFix) {
   return {
     source: () => source,
     hasTruckGps: () => !!window.GevNative,
+    status: () => status,
+    readStatus,
     demoDrive,
     demoPark,
     demoRestart,

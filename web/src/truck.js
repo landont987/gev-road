@@ -65,9 +65,16 @@ export function createTruck(map, onFollowChange) {
     if (following) map.setView(latlng, map.getZoom(), { animate: false });
   }
 
+  /** Where the truck was last seen: the start view, until a real fix arrives. */
+  function setStart(where) {
+    if (last) return;
+    map.setView([where.lat, where.lon], map.getZoom(), { animate: false });
+  }
+
   return {
     update,
     setFollowing,
+    setStart,
     isFollowing: () => following,
   };
 }

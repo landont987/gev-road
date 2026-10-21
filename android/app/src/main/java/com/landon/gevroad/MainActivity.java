@@ -9,8 +9,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -18,7 +16,6 @@ import android.net.TrafficStats;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Process;
-import android.os.SystemClock;
 import android.util.Base64;
 import android.util.Log;
 import android.view.WindowManager;
@@ -72,9 +69,6 @@ public class MainActivity extends Activity {
     private static final int PULL_BODIES_MAX = 8; // answers waiting for the page, in case it never asks
     private static final String PULL_PATH = "/native/http/";
     private static final long TILE_NETWORK_PAUSE_MS = 30000; // after a failed fetch, serve stale or hand over for this long
-    private static final long GPS_INTERVAL_MS = 1000;
-    // A saved fix older than this is not shown as the truck's position.
-    private static final long LAST_FIX_MAX_AGE_MS = 30000;
     private static final Pattern KEY_IN_URL = Pattern.compile("([?&](?:key|api_key|apikey|token))=[^&\\s\"']+");
     // Debug builds only: adb shell am broadcast -a <this> --es b64 <base64 text> feeds the detector.
     private static final String DEBUG_DETECTOR_ACTION = "com.landon.gevroad.DEBUG_DETECTOR_LINES";
@@ -95,30 +89,27 @@ public class MainActivity extends Activity {
     private Boolean lastOnline;
     private boolean everValidated;
     private boolean rendererGone;
-    private LocationManager locations;
+    private GpsWatch gps;
     private long rxAtStart;
     private long txAtStart;
-    private boolean gpsRunning;
     private boolean askedForLocation;
 
-    private final LocationListener gpsListener = new LocationListener() {
+    // Every provider the unit has, with the state the page shows when nothing arrives (#64).
+    private final GpsWatch.Listener gpsListener = new GpsWatch.Listener() {
         @Override
-        public void onLocationChanged(Location location) {
+        public void onFix(Location location) {
             pushLocation(location);
         }
 
         @Override
-        public void onStatusChanged(String provider, int status, Bundle extras) {
-            // Required on Android 9; nothing to do.
+        public void onLastKnown(Location where, long ageMs) {
+            js(String.format(Locale.US, "window.gevOnLastKnown&&window.gevOnLastKnown(%.7f,%.7f,%d)",
+                    where.getLatitude(), where.getLongitude(), ageMs / 1000));
         }
 
         @Override
-        public void onProviderEnabled(String provider) {
-        }
-
-        @Override
-        public void onProviderDisabled(String provider) {
-            Toast.makeText(MainActivity.this, "GPS is turned off on this unit.", Toast.LENGTH_LONG).show();
+        public void onStatus(String json) {
+            js("window.gevOnGpsStatus&&window.gevOnGpsStatus(" + jsString(json) + ")");
         }
     };
 
@@ -130,7 +121,7 @@ public class MainActivity extends Activity {
         int uid = Process.myUid();
         rxAtStart = TrafficStats.getUidRxBytes(uid);
         txAtStart = TrafficStats.getUidTxBytes(uid);
-        locations = (LocationManager) getSystemService(LOCATION_SERVICE);
+        gps = new GpsWatch(this, gpsListener);
         NativeHttp.init(this);
         tiles = new TileCache(new File(getCacheDir(), "tiles"), TILE_MAX_AGE_MS, TILE_MAX_BYTES);
         final TileCache toPrune = tiles;
@@ -348,6 +339,8 @@ public class MainActivity extends Activity {
             // Ask once per launch: after "Deny", onResume runs again and must not re-ask in a loop.
             askedForLocation = true;
             requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_REQUEST);
+        } else {
+            gpsListener.onStatus(gps.statusJson(false));
         }
     }
 
@@ -380,40 +373,27 @@ public class MainActivity extends Activity {
             startGps();
         } else {
             Toast.makeText(this, "Without location the map cannot follow the truck.", Toast.LENGTH_LONG).show();
+            gpsListener.onStatus(gps.statusJson(false));
         }
     }
 
     private void startGps() {
-        if (gpsRunning || locations == null) return;
-        try {
-            locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, GPS_INTERVAL_MS, 0, gpsListener);
-            gpsRunning = true;
-            Location last = locations.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            if (last != null && ageMs(last) < LAST_FIX_MAX_AGE_MS) pushLocation(last);
-        } catch (SecurityException | IllegalArgumentException e) {
-            Log.e(TAG, "GPS could not start", e);
-            Toast.makeText(this, "This unit's GPS could not start.", Toast.LENGTH_LONG).show();
-        }
+        gps.start();
     }
 
     private void stopGps() {
-        if (!gpsRunning) return;
-        locations.removeUpdates(gpsListener);
-        gpsRunning = false;
-    }
-
-    private static long ageMs(Location loc) {
-        return (SystemClock.elapsedRealtimeNanos() - loc.getElapsedRealtimeNanos()) / 1000000L;
+        gps.stop();
     }
 
     private void pushLocation(Location loc) {
         String js = String.format(Locale.US,
-                "window.gevOnLocation&&window.gevOnLocation(%.7f,%.7f,%.2f,%.1f,%.1f)",
+                "window.gevOnLocation&&window.gevOnLocation(%.7f,%.7f,%.2f,%.1f,%.1f,%s)",
                 loc.getLatitude(),
                 loc.getLongitude(),
                 loc.hasSpeed() ? loc.getSpeed() : -1f,
                 loc.hasBearing() ? loc.getBearing() : -1f,
-                loc.hasAccuracy() ? loc.getAccuracy() : -1f);
+                loc.hasAccuracy() ? loc.getAccuracy() : -1f,
+                jsString(loc.getProvider() == null ? "" : loc.getProvider()));
         js(js);
     }
 
@@ -508,6 +488,25 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void stopSpeaking() {
             speech.stop();
+        }
+
+        /** Opens the unit's Location settings: the menu offers it when location is off (#64). */
+        @JavascriptInterface
+        public void openLocationSettings() {
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "no location settings screen", e);
+                    Toast.makeText(MainActivity.this, "This unit has no Location settings screen.", Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+
+        /** The GPS state as JSON (see GpsWatch.statusJson), for the menu's LOCATION section. */
+        @JavascriptInterface
+        public String gpsStatusJson() {
+            return gps.statusJson(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED);
         }
 
         /** Whether the network has working internet right now (the page asks once at startup). */
