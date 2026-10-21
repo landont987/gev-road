@@ -5,6 +5,12 @@ and `version` in `package.json`, so the ☰ menu's VERSION line tells builds apa
 Each version below has a git tag (`v0.3.9`, ...). APKs are never committed or
 uploaded: the API keys are built into them.
 
+## 0.3.14 (2026-10-20)
+Fixes from the first head-unit drive (issue #46): no GPS, a slow map, a Broadcastify login, silent channels.
+- GPS: the app listens to every location provider the unit has (gps, network, passive), asks the chip for assistance data at start, and centers the map on where the truck was last seen. While there is no fix the status card says why: LOCATION OFF, NO GPS PERMISSION, NO GPS RECEIVER, or GPS 3/11 SATS while searching. The ☰ menu's LOCATION section explains, warns about the antenna after two minutes with no satellite, and offers OPEN LOCATION SETTINGS. A GPS that cannot work is spoken once.
+- Map: at most 120 dots per layer (the nearest to the middle of the screen) and none when the whole state is on screen; the start view held 1,073 markers. The ☰ menu's DATA section gains a SCREEN line: pixel ratio, dots drawn, and the frame rate of the last swipe, for the next truck report.
+- Radio: the live-calls login can be built into the app (bcfyUser and bcfyPass in keys.local.json), so nothing is typed on the unit. A pack starts with its newest three calls from the last 10 minutes instead of waiting for the next one; the status says "quiet for N min"; a pack over 5 groups polls its two requests side by side. Feed rows say which pages need a sign-in (Broadcastify's web pages do, each time the app restarts; their rules).
+
 ## 0.3.13 (2026-10-20)
 Second bug and performance sweep before the first head-unit test (page modules and the Android shell; profile in docs/PERF-2026-10-20.md).
 - While moving, the map follows the truck again by itself 10 s after a stray finger drag, and a long press no longer opens "Drive here?" (both needed a tap while driving).

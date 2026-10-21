@@ -35,17 +35,17 @@ later (see the "Go public" issue).
 - `CHANGELOG.md`: one entry per version.
 
 ## Build, test, install
-- Tests: `npm test` (node:test, 188 tests at 0.3.13) and `sh scripts/test-java.sh` (LineFramer and TileCache; needs `JAVA_HOME=~/.local/jdk-17/Contents/Home`).
+- Tests: `npm test` (node:test, 207 tests at 0.3.14) and `sh scripts/test-java.sh` (LineFramer, TileCache and FixPicker; needs `JAVA_HOME=~/.local/jdk-17/Contents/Home`).
 - Release APK: `node scripts/build-web.mjs --android && cd android && JAVA_HOME=~/.local/jdk-17/Contents/Home ~/.local/gradle-9.8.0/bin/gradle assembleRelease`, then copy to `~/Desktop/GEV-Road-<version>.apk` and move the previous one to the Trash.
 - Every build bumps the version in `android/app/build.gradle.kts` (versionCode + versionName) and in `package.json`, gets a `CHANGELOG.md` entry, and gets a git tag `v<version>`.
 - Browser preview: `node scripts/dev.mjs` (port 4180). It relays `/az511/` because az511.com sends no CORS header. Voice, GPS, USB and AndrOBD don't exist in a browser.
 - Emulator: AVD `gev-android9` (arm64, Android 9).
   - It takes about 2 GB and slows the owner's other work: ask before starting it and close it right after.
   - `adb` and the emulator need the Bash sandbox off.
-- Install on the truck: upload the APK to Google Drive, download it on the head unit over the hotspot, allow unknown apps once, install.
+- Install on the truck: copy the APK to the owner's FAT32 flash drive ("onn Disk"), verify the sha256, eject; on the unit open the file manager, tap the APK, allow unknown apps once, install.
 
 ## Keys (never in chat, never in git)
-- `keys.local.json` (git-ignored) holds `az511`, `gemini`, `openai`, `tomtom`, `bcfyKeyId`, `bcfySecret`, `bcfyAppId` and `truckDescription`.
+- `keys.local.json` (git-ignored) holds `az511`, `gemini`, `openai`, `tomtom`, `bcfyKeyId`, `bcfySecret`, `bcfyAppId`, `bcfyUser`, `bcfyPass` (the owner's Broadcastify account, for the live calls' own auth call; empty means the unit asks once) and `truckDescription`.
 - `scripts/build-web.mjs` bakes them into the bundle, so **APKs must never be committed or uploaded**, not even to a private release.
 - The owner copies a key and runs a one-line `pbpaste | python3 ...` command that writes one slot and prints only the length. Test every new key against its real API before building.
 - Status at 0.3.9: az511, gemini, openai and Broadcastify are set and proven; tomtom is empty (free tier, 200K traffic tiles a month, no card).
@@ -75,6 +75,8 @@ later (see the "Go public" issue).
 - **OpenAI TTS:** `gpt-4o-mini-tts`, clips cached by hash, and the app must disclose that the voice is AI.
 - **ADOT:** reuses camera names, so camera alerts are keyed by place.
 - **Tile cache (0.3.12):** checked on the emulator 2026-10-20. `adb shell svc wifi disable` and `svc data disable` take the emulator offline; after a force-stop and restart the map shows from `cache/tiles` with DATA 0.0 MB. `run-as com.landon.gevroad find cache/tiles -name '*.png'` counts the tiles.
+- **First truck drive, 0.3.13 (2026-10-20):** no GPS fix at all (the shell listened to the `gps` provider only and said nothing about why), the map crawled at zoom 13 with about 1,000 markers, the Broadcastify login had to be typed on the unit, quiet calls packs stayed silent. 0.3.14 answers each (issues #64-#67); the GPS root cause is still unknown until the next drive reports the menu's LOCATION line.
+- **GitHub closes only the first issue after one `Closes`:** write `Closes #1, closes #2`, one keyword per number.
 - **0.3.13 on the emulator (2026-10-20):** the 2.4 MB closures feed arrives through `/native/http/<id>` in 9 ms; the menu reads "unit 1404 MB free of 1.9 GB, app process 80 MB"; PSS was app 90 MB, WebView renderer 105 MB with the drawer closed and 312 MB with a Broadcastify page open, so STOP (which now destroys the drawer's WebView) gives back about 200 MB. After a swipe during the demo drive the map re-followed within 11 s. DevTools: `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` and a node script with the global `WebSocket` (node 22) against `http://127.0.0.1:9222/json`.
 - **Debug a release build:**
   1. Temporarily set `WebView.setWebContentsDebuggingEnabled(true)` in `MainActivity`.
