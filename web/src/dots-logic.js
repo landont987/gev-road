@@ -7,10 +7,14 @@
 
 /** Half a screen of margin on every side, so a pan rarely shows an empty edge. */
 export const VIEW_PAD = 0.5;
-/** Below this zoom the map shows no dots at all: a whole city of cameras is noise and weight. */
-export const MIN_DOT_ZOOM = 12;
-/** The most dots drawn at once, the nearest to the middle of the screen. */
-export const MAX_DOTS = 300;
+/** Below this zoom (the whole state on screen) the map shows no dots at all. */
+export const MIN_DOT_ZOOM = 9;
+/**
+ * The most dots one layer draws at once, the nearest to the middle of the
+ * screen. Three layers can be on (cameras, road info, plate readers), so the
+ * page never holds more than about 360 markers; the start view held 1,073.
+ */
+export const MAX_DOTS = 120;
 
 export function padBox(box, fraction) {
   const dLat = (box.north - box.south) * fraction;
