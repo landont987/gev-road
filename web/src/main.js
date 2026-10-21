@@ -232,7 +232,11 @@ function onFix(raw) {
     gpsLostSpoken = false;
     voice.alert('link', 'GPS is back.');
   }
-  truck.update(fix);
+  try {
+    truck.update(fix);
+  } catch (err) {
+    console.warn('truck:', err);
+  }
   // Add-ons must never stop the speed, the moving flag, the status or each other.
   try {
     routing.update(fix);
@@ -254,7 +258,9 @@ function onFix(raw) {
   } catch (err) {
     console.warn('truck check:', err);
   }
-  const nowMoving = fix.speed !== null && fix.speed >= MOVING_SPEED_MPS;
+  // Unknown speed (a GPS gap) is not "stopped": hold the last moving state so the
+  // flag does not flap under an overpass, which would churn layers and reopen sheets.
+  const nowMoving = fix.speed === null ? moving : fix.speed >= MOVING_SPEED_MPS;
   if (nowMoving !== moving) {
     moving = nowMoving;
     cameras.refresh();
@@ -263,7 +269,11 @@ function onFix(raw) {
     if (openSheetKind() === 'detector') openDetector();
     if (openSheetKind() === 'engine') openEngine();
   }
-  updateStatus();
+  try {
+    updateStatus();
+  } catch (err) {
+    console.warn('status:', err);
+  }
 }
 
 const startedAt = Date.now();
@@ -288,8 +298,12 @@ function gpsText() {
   return gpsMenuText(gps.readStatus(), Math.round((Date.now() - startedAt) / 1000));
 }
 setInterval(() => {
-  updateStatus();
-  updateData();
+  try {
+    updateStatus();
+    updateData();
+  } catch (err) {
+    console.warn('status tick:', err);
+  }
 }, GPS_STALE_MS);
 
 function toggle(name) {

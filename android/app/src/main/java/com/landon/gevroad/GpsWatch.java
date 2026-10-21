@@ -180,6 +180,7 @@ final class GpsWatch {
         gnssStarted = false;
         satellites = 0;
         satellitesUsed = 0;
+        picker.reset();
         listening.clear();
     }
 

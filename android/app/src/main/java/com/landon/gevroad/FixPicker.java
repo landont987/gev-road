@@ -41,6 +41,13 @@ final class FixPicker {
         return true;
     }
 
+    /** Forget the last fix: called when the watch stops, so a resume does not hold out a new provider. */
+    void reset() {
+        lastProvider = "";
+        lastFixNanos = Long.MIN_VALUE;
+        lastAcceptedAt = Long.MIN_VALUE;
+    }
+
     String lastProvider() {
         return lastProvider;
     }

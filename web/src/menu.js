@@ -55,9 +55,11 @@ export function openMenu(app) {
   body.appendChild(el('button', { class: 'pill wide', onclick: () => app.openEngine() }, 'ENGINE DATA (ANDROBD)'));
 
   body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'LOCATION')));
-  body.appendChild(
-    el('p', { class: 'sheet-sub' }, gps.source() === 'truck' ? 'Using the truck GPS.' : 'Using the demo drive (fake GPS).'),
-  );
+  if (!gps.hasTruckGps() || gps.isDebug()) {
+    body.appendChild(
+      el('p', { class: 'sheet-sub' }, gps.source() === 'truck' ? 'Using the truck GPS.' : 'Using the demo drive (fake GPS).'),
+    );
+  }
   if (gps.hasTruckGps()) {
     body.appendChild(el('p', { class: 'sheet-sub' }, app.gpsText()));
     const status = gps.status();
@@ -67,31 +69,37 @@ export function openMenu(app) {
       );
     }
   }
-  if (gps.hasTruckGps()) {
+  // The demo drive is for the computer mockup and the emulator only. On the real
+  // truck (a release build with truck GPS) it is hidden, so a driver can never tap
+  // it by mistake and freeze the live arrow downtown (it set the GPS source to demo).
+  const demoAllowed = !gps.hasTruckGps() || gps.isDebug();
+  if (demoAllowed) {
+    if (gps.hasTruckGps()) {
+      body.appendChild(
+        el('button', { class: 'pill wide', onclick: () => { gps.useTruck(); closeSheet(); } }, 'USE TRUCK GPS'),
+      );
+    }
     body.appendChild(
-      el('button', { class: 'pill wide', onclick: () => { gps.useTruck(); closeSheet(); } }, 'USE TRUCK GPS'),
+      el(
+        'button',
+        {
+          class: 'pill wide',
+          onclick: () => {
+            closeSheet();
+            gps.demoDrive(app.routing.current()).catch((err) => {
+              console.warn('demo drive:', err);
+              toast('Demo drive needs internet to fetch its route.');
+            });
+          },
+        },
+        app.routing.current() ? 'DEMO: DRIVE MY ROUTE' : 'DEMO: DRIVE I-17 NORTH',
+      ),
+    );
+    body.appendChild(el('button', { class: 'pill wide', onclick: () => { gps.demoPark(); closeSheet(); } }, 'DEMO: STOP THE TRUCK'));
+    body.appendChild(
+      el('button', { class: 'pill wide', onclick: () => { gps.demoRestart(); gps.demoPark(); closeSheet(); } }, 'DEMO: BACK TO START'),
     );
   }
-  body.appendChild(
-    el(
-      'button',
-      {
-        class: 'pill wide',
-        onclick: () => {
-          closeSheet();
-          gps.demoDrive(app.routing.current()).catch((err) => {
-            console.warn('demo drive:', err);
-            toast('Demo drive needs internet to fetch its route.');
-          });
-        },
-      },
-      app.routing.current() ? 'DEMO: DRIVE MY ROUTE' : 'DEMO: DRIVE I-17 NORTH',
-    ),
-  );
-  body.appendChild(el('button', { class: 'pill wide', onclick: () => { gps.demoPark(); closeSheet(); } }, 'DEMO: STOP THE TRUCK'));
-  body.appendChild(
-    el('button', { class: 'pill wide', onclick: () => { gps.demoRestart(); gps.demoPark(); closeSheet(); } }, 'DEMO: BACK TO START'),
-  );
 
   body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'DATA')));
   body.appendChild(el('p', { class: 'sheet-sub' }, app.dataText()));

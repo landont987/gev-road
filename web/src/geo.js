@@ -122,6 +122,8 @@ export function pickTileZoom(box, minZ, maxZ, maxTiles) {
 
 /** Point a fraction of the way along a [lon, lat] polyline, with its heading. */
 export function pointAlong(coords, meters) {
+  if (!coords || coords.length === 0) return { lat: 0, lon: 0, bearing: 0, done: true };
+  if (coords.length === 1) return { lat: coords[0][1], lon: coords[0][0], bearing: 0, done: true };
   let left = meters;
   for (let i = 0; i < coords.length - 1; i++) {
     const a = { lon: coords[i][0], lat: coords[i][1] };

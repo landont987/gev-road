@@ -33,6 +33,14 @@ public final class FixPickerTest {
         check("first gps fix shows", q.accept("gps", 100 * MS, 100));
         check("a distinct gps fix one second later still shows", q.accept("gps", 1100 * MS, 1100));
 
+        // After reset (a stop), the gps hold is forgotten so a network fix is not held out.
+        FixPicker r = new FixPicker();
+        check("gps accepted", r.accept("gps", 500 * MS, 500));
+        check("network held out while gps is fresh", !r.accept("network", 600 * MS, 600));
+        r.reset();
+        check("after reset a network fix shows at once", r.accept("network", 700 * MS, 700));
+        check("after reset the provider is cleared", r.lastProvider().equals("network"));
+
         if (failures > 0) {
             System.err.println(failures + " FixPicker check(s) failed");
             System.exit(1);

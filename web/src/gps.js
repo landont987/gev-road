@@ -138,6 +138,7 @@ export function createGps(onFix, hooks = {}) {
   return {
     source: () => source,
     hasTruckGps: () => !!window.GevNative,
+    isDebug: () => !!(window.GevNative && typeof window.GevNative.isDebug === 'function' && window.GevNative.isDebug()),
     status: () => status,
     readStatus,
     demoDrive,
