@@ -53,10 +53,12 @@ export const openSheetKind = () => sheetKind;
  * runs, otherwise it snaps back. Works with touch and with a mouse (the preview).
  * onDismiss must hide the element; makeSwipeable only clears its own inline styles.
  */
-export function makeSwipeable(el, onDismiss) {
+export function makeSwipeable(el, onDismiss, getToken) {
   let x0 = 0;
   let y0 = 0;
   let active = false;
+  let token = null;
+  let pending = null; // the 200 ms exit/snap-back timer, cancelled if a new drag starts
   const SNAP = 'opacity 0.2s ease-out, transform 0.2s ease-out';
 
   function clearInline() {
@@ -66,9 +68,14 @@ export function makeSwipeable(el, onDismiss) {
   }
 
   function start(x, y) {
+    if (pending) {
+      clearTimeout(pending);
+      pending = null;
+    }
     active = true;
     x0 = x;
     y0 = y;
+    token = getToken ? getToken() : null; // which card/toast this gesture belongs to
     el.style.transition = 'none';
   }
 
@@ -81,39 +88,58 @@ export function makeSwipeable(el, onDismiss) {
     el.style.opacity = String(dragOpacity(dx, dy));
   }
 
+  // Put the element back; used on a short drag and on a cancelled/interrupted touch,
+  // so a notification can never get stuck offset or faded (the whole point of this).
+  function snapBack() {
+    el.style.transition = SNAP;
+    el.style.transform = '';
+    el.style.opacity = '';
+    pending = setTimeout(() => {
+      clearInline();
+      pending = null;
+    }, 200);
+  }
+
   function end(x, y) {
     if (!active) return;
     active = false;
     const r = swipeResult(x - x0, y - y0);
-    if (r.dismiss) {
-      el.style.transition = SNAP;
-      el.style.transform = exitTransform(r.axis, r.dir);
-      el.style.opacity = '0';
-      setTimeout(() => {
-        clearInline(); // reset before onDismiss hides it, so the next one shows fresh
-        onDismiss();
-      }, 200);
-    } else {
-      el.style.transition = SNAP;
-      el.style.transform = '';
-      el.style.opacity = '';
-      setTimeout(clearInline, 200);
+    if (!r.dismiss) {
+      snapBack();
+      return;
     }
+    const mine = token;
+    el.style.transition = SNAP;
+    el.style.transform = exitTransform(r.axis, r.dir);
+    el.style.opacity = '0';
+    pending = setTimeout(() => {
+      clearInline(); // reset before onDismiss, so the next notification shows fresh
+      pending = null;
+      onDismiss(mine); // mine lets the caller ignore a card/toast that was already replaced
+    }, 200);
+  }
+
+  function cancel() {
+    if (!active) return;
+    active = false;
+    snapBack();
   }
 
   el.addEventListener('touchstart', (e) => { const t = e.touches[0]; start(t.clientX, t.clientY); }, { passive: true });
   el.addEventListener('touchmove', (e) => { const t = e.touches[0]; move(t.clientX, t.clientY, e); }, { passive: false });
   el.addEventListener('touchend', (e) => { const t = (e.changedTouches && e.changedTouches[0]) || {}; end(t.clientX == null ? x0 : t.clientX, t.clientY == null ? y0 : t.clientY); });
-  // Mouse too, for the computer preview; window may be a bare stub under node tests.
+  el.addEventListener('touchcancel', cancel);
   el.addEventListener('mousedown', (e) => start(e.clientX, e.clientY));
   if (typeof window !== 'undefined' && window.addEventListener) {
     window.addEventListener('mousemove', (e) => { if (active) move(e.clientX, e.clientY, e); });
     window.addEventListener('mouseup', (e) => { if (active) end(e.clientX, e.clientY); });
+    window.addEventListener('blur', cancel); // mouse released off-window / app backgrounded mid-drag
   }
 }
 
 let toastTimer = null;
 let toastSwipeWired = false;
+let toastGen = 0;
 export function hideToast() {
   clearTimeout(toastTimer);
   $('toast').hidden = true;
@@ -122,9 +148,11 @@ export function hideToast() {
 export function toast(message, ms) {
   const node = $('toast');
   if (!toastSwipeWired) {
-    makeSwipeable(node, hideToast); // flick it away instead of waiting (#swipe-dismiss)
+    // Flick it away instead of waiting; the token guards against hiding a newer toast (#swipe-dismiss).
+    makeSwipeable(node, (tok) => { if (tok == null || tok === toastGen) hideToast(); }, () => toastGen);
     toastSwipeWired = true;
   }
+  toastGen += 1;
   node.textContent = message;
   node.hidden = false;
   clearTimeout(toastTimer);

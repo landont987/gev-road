@@ -162,7 +162,7 @@ export function createRoad(deps) {
     showNext();
   }
   $('popup').addEventListener('click', hide);
-  makeSwipeable($('popup'), dismissNow);
+  makeSwipeable($('popup'), (card) => { if (!card || card === showing) dismissNow(); }, () => showing);
 
   /** urgent: closures and crashes go first and slide a quieter card away. */
   function push(spot, distanceText, urgent) {
