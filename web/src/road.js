@@ -10,7 +10,7 @@
 import { KEYS } from './config.js';
 import { nativeFetch } from './native-fetch.js';
 import { parseEvents, parseSigns, parseWeather, parseRestAreas, dueCards, milesText, stillDueM } from './road-logic.js';
-import { $, el } from './ui.js';
+import { $, el, makeSwipeable } from './ui.js';
 import { distanceM } from './geo.js';
 import { createDotLayer } from './dots.js';
 
@@ -59,8 +59,11 @@ export function createRoad(deps) {
         rebuild();
       })
       .catch((err) => {
-        // Keep the last good list; try again sooner than the normal wait.
-        fetchedAt[feed] = Date.now() - (FEEDS[feed].everyMs - RETRY_MS);
+        // Keep the last good list; try again RETRY_MS from now, not the normal wait.
+        // Base it on the interval in force now (low-data uses a longer one), or the
+        // retry would stretch to minutes exactly when the hotspot is flaky (#1).
+        const activeWait = app.isLowData() ? FEEDS[feed].lowDataEveryMs : FEEDS[feed].everyMs;
+        fetchedAt[feed] = Date.now() - activeWait + RETRY_MS;
         console.warn(`road info ${feed}:`, err.message || err);
       })
       .then(() => {
@@ -148,7 +151,18 @@ export function createRoad(deps) {
       showNext();
     }, SLIDE_MS);
   }
+  // A tap on the card dismisses it with the slide-up; a swipe flicks it away (#swipe-dismiss).
+  function dismissNow() {
+    if (!showing || showing.leaving) return;
+    showing.leaving = true;
+    clearTimeout(showing.timer);
+    clearInterval(showing.pageTimer);
+    $('popup').hidden = true;
+    showing = null;
+    showNext();
+  }
   $('popup').addEventListener('click', hide);
+  makeSwipeable($('popup'), (card) => { if (!card || card === showing) dismissNow(); }, () => showing);
 
   /** urgent: closures and crashes go first and slide a quieter card away. */
   function push(spot, distanceText, urgent) {

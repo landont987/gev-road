@@ -145,12 +145,15 @@ export function createPlates(map) {
       ).then((lists) => ({ records: Array.prototype.concat.apply([], lists), failed }));
     },
     setEnabled(on) {
+      // applySettings runs on every switch; only turning PLATE READERS on re-walks
+      // the tiles, so flipping an unrelated toggle no longer flickers the dots (#7).
+      const turnedOn = on && !enabled;
       enabled = on;
       dots.setEnabled(on);
-      if (on) {
+      if (turnedOn) {
         drawnKeys = '';
         refresh();
-      } else {
+      } else if (!on) {
         request++;
       }
     },
