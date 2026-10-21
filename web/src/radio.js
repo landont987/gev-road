@@ -22,7 +22,8 @@ import { watchStream } from './stream-retry.js';
 const STORE_KEY = 'gev-road-radio';
 const MY_SCANNER_RETRY_MS = 4000;
 // A dead or mistyped stream never plays: give up after this many restarts in a row
-// (about 80 s) instead of retrying on the hotspot forever. A hotspot blip resets it.
+// (about 80 s of error/ended retries, longer if stalls pace them) instead of retrying
+// on the hotspot forever. A hotspot blip that plays again resets the count.
 const STREAM_MAX_FAILURES = 20;
 const STREAM_STALL_MS = 15000; // no data this long after "stalled": the stream is dead, not slow
 const M_PER_MILE = 1609.344;

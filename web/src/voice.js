@@ -23,7 +23,7 @@ const SWITCH = {
 const SAMPLE = 'This is your GEV Road voice. Plate reader ahead.';
 // If a hung TTS engine or clip never reports "done speaking", the radio would
 // stay ducked (quiet). Force it back up after this long; real alerts are short.
-const DUCK_WATCHDOG_MS = 12000;
+const DUCK_WATCHDOG_MS = 25000; // above Speech.CLIP_MAX_MS (20 s) so a real long alert is never cut
 
 const PROBLEMS = {
   'ai-key-refused': 'OpenAI refused the key, so the unit\'s own voice speaks until the app restarts. Check "openai" in keys.local.json.',

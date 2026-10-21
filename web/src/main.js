@@ -60,7 +60,9 @@ const basemap = L.tileLayer(BASEMAP_URL, {
 
 let lastFix = null;
 let lastFixAt = 0;
+let lastSpeedAt = 0; // the last time a fix carried a real speed (not a GPS-gap null)
 let moving = false;
+const MOVING_CLEAR_MS = 45000; // moving with no real speed this long (GPS gone to network-only): call it stopped
 let online = true; // until the app says otherwise
 let appVisible = true; // the GPS is stopped while the app is in the background
 let visibleSince = Date.now();
@@ -224,6 +226,17 @@ function applySettings() {
   updateData();
 }
 
+// Flip the moving flag and do the once-per-change work (layers, parked-only panels).
+function setMoving(next) {
+  if (next === moving) return;
+  moving = next;
+  cameras.refresh();
+  truckCheck.refresh();
+  // Setup buttons and steps show only while parked.
+  if (openSheetKind() === 'detector') openDetector();
+  if (openSheetKind() === 'engine') openEngine();
+}
+
 function onFix(raw) {
   const fix = withSpeed(raw, lastFix, lastFixAt, Date.now());
   lastFix = fix;
@@ -260,14 +273,10 @@ function onFix(raw) {
   }
   // Unknown speed (a GPS gap) is not "stopped": hold the last moving state so the
   // flag does not flap under an overpass, which would churn layers and reopen sheets.
-  const nowMoving = fix.speed === null ? moving : fix.speed >= MOVING_SPEED_MPS;
-  if (nowMoving !== moving) {
-    moving = nowMoving;
-    cameras.refresh();
-    truckCheck.refresh();
-    // Setup buttons and steps show only while parked.
-    if (openSheetKind() === 'detector') openDetector();
-    if (openSheetKind() === 'engine') openEngine();
+  // A long run of null speed is caught by the stale-moving check in the interval.
+  if (fix.speed !== null) {
+    lastSpeedAt = Date.now();
+    setMoving(fix.speed >= MOVING_SPEED_MPS);
   }
   try {
     updateStatus();
@@ -299,6 +308,8 @@ function gpsText() {
 }
 setInterval(() => {
   try {
+    // GPS dropped to network-only (no speed) after driving: don't stay "moving" forever.
+    if (moving && lastSpeedAt && Date.now() - lastSpeedAt > MOVING_CLEAR_MS) setMoving(false);
     updateStatus();
     updateData();
   } catch (err) {

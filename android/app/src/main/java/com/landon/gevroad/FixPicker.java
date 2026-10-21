@@ -32,7 +32,9 @@ final class FixPicker {
     boolean accept(String provider, long fixNanos, long nowMs) {
         String name = provider == null ? "" : provider;
         // The same underlying fix again (a passive echo of a GPS fix, or a repeat).
-        if (name.equals(lastProvider) && fixNanos == lastFixNanos) return false;
+        // fixNanos <= 0 means the fix carries no monotonic time (a quirky HAL or mock
+        // provider): don't dedupe on it, or every fix after the first would be dropped.
+        if (fixNanos > 0 && name.equals(lastProvider) && fixNanos == lastFixNanos) return false;
         boolean gpsHeld = GPS.equals(lastProvider) && nowMs - lastAcceptedAt < GPS_HOLD_MS;
         if (!GPS.equals(name) && gpsHeld) return false;
         lastProvider = name;

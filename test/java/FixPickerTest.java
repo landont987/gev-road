@@ -41,6 +41,11 @@ public final class FixPickerTest {
         check("after reset a network fix shows at once", r.accept("network", 700 * MS, 700));
         check("after reset the provider is cleared", r.lastProvider().equals("network"));
 
+        // A HAL that reports no monotonic time (fixNanos <= 0) must not get every fix dropped.
+        FixPicker z = new FixPicker();
+        check("first zero-nanos gps fix shows", z.accept("gps", 0, 1000));
+        check("a second zero-nanos gps fix still shows (no dedupe on 0)", z.accept("gps", 0, 2000));
+
         if (failures > 0) {
             System.err.println(failures + " FixPicker check(s) failed");
             System.exit(1);
