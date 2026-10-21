@@ -5,6 +5,12 @@ and `version` in `package.json`, so the ☰ menu's VERSION line tells builds apa
 Each version below has a git tag (`v0.3.9`, ...). APKs are never committed or
 uploaded: the API keys are built into them.
 
+## 0.3.17 (2026-10-20)
+Radio rebuilt around live channels, and a GPS card that says what is wrong.
+- Radio: the channel list is now read live from Broadcastify for the county you are in, newest call first, so only channels that are actually talking show up. The old fixed list had gone stale: 8 of its 24 channels (every DPS and every Mesa/Gilbert one) had not had a call in a day. One tap plays Police, Fire & EMS, or the most active channels; the first call plays within about half a second.
+- Radio: nothing opens a web page anymore. The feed pages and their sign-in screens are gone; everything plays inside the app.
+- GPS: when there is no position, a card on the map says why in plain words: the unit has no GPS receiver, Location or the permission is off, the GPS sees no satellites (check the antenna plug on the back of the unit), or how many satellites it has found so far. Swipe it away; it hides itself once there is a fix.
+
 ## 0.3.16 (2026-10-20)
 Swipe notifications away, plus fixes from a second pre-drive bug sweep.
 - You can now swipe the pop-up road cards and the message toasts off the screen with a finger, instead of waiting for them to time out. A tap still works, and a half-swipe snaps back.

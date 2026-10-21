@@ -35,7 +35,7 @@ later (see the "Go public" issue).
 - `CHANGELOG.md`: one entry per version.
 
 ## Build, test, install
-- Tests: `npm test` (node:test, 217 tests at 0.3.16) and `sh scripts/test-java.sh` (LineFramer, TileCache and FixPicker; needs `JAVA_HOME=~/.local/jdk-17/Contents/Home`).
+- Tests: `npm test` (node:test, 225 tests at 0.3.17) and `sh scripts/test-java.sh` (LineFramer, TileCache and FixPicker; needs `JAVA_HOME=~/.local/jdk-17/Contents/Home`).
 - Release APK: `node scripts/build-web.mjs --android && cd android && JAVA_HOME=~/.local/jdk-17/Contents/Home ~/.local/gradle-9.8.0/bin/gradle assembleRelease`, then copy to `~/Desktop/GEV-Road-<version>.apk` and move the previous one to the Trash.
 - Every build bumps the version in `android/app/build.gradle.kts` (versionCode + versionName) and in `package.json`, gets a `CHANGELOG.md` entry, and gets a git tag `v<version>`.
 - Browser preview: `node scripts/dev.mjs` (port 4180). It relays `/az511/` because az511.com sends no CORS header. Voice, GPS, USB and AndrOBD don't exist in a browser.
@@ -60,6 +60,7 @@ later (see the "Go public" issue).
 - **Tiles:** CARTO dark tiles answer 200 with an "API KEY REQUIRED" image. Look at tiles; never trust the status code alone.
 - **az511.com and CORS:** the API sends no CORS header. Lists go through `nativeFetch` (Android); pictures load in a plain `<img>`. The closures feed is 2.4 MB (280 KB gzipped), so the `NativeHttp` body cap is 4 MB. Rate limit: 10 calls a minute.
 - **AZ511 robots.txt** blocks `/list/getdata/` and `/map/map*/`: never scrape them.
+- **Broadcastify county channel list (2026-10-20):** `POST /calls/v1/groups_ctid/<ctid>` with `secs_ago` lists the talkgroups with calls in that county (groupId, tgDescr, tgDisplay, tgCname, tagDescr, ts = last call). It needs only the app JWT (no user login). The radio's channel list comes from it, because hard-coded packs went stale: 8 of 24 had no call in a day (all DPS 3759-* and TOPAZ 2082-*). The preview reaches api.bcfy.io through the dev server's `/bcfy/` relay.
 - **Broadcastify Calls live endpoint:**
   - At most 5 groups per request (HTTP 500 code 159).
   - Groups take plain commas: `%2C` gives 200 with 0 calls.
