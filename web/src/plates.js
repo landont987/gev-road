@@ -122,6 +122,8 @@ export function createPlates(map) {
   map.on('moveend', refresh);
 
   return {
+    /** How many dots are DOM markers right now (the menu's SCREEN line, #65). */
+    count: dots.count,
     /**
      * Plate readers within about radiusM of a point, for spoken alerts (works with
      * the layer off). Resolves { records, failed }: failed counts tiles with no

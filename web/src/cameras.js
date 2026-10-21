@@ -171,6 +171,8 @@ export function createCameras(map, app) {
   }
 
   return {
+    /** How many dots are DOM markers right now (the menu's SCREEN line, #65). */
+    count: dots.count,
     setEnabled(on) {
       // applySettings calls this on every switch; only turning CAMERAS on loads (and may toast).
       const turnedOn = on && !enabled;

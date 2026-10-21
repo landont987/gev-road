@@ -5,10 +5,11 @@
 // but invisible.
 //
 // createDotLayer keeps the DOM small: only the dots on screen plus a margin
-// are markers (dots-logic.js), re-checked when the map stops moving.
+// are markers, at most MAX_DOTS and none below MIN_DOT_ZOOM (dots-logic.js),
+// re-checked when the map stops moving.
 
 import L from 'leaflet';
-import { VIEW_PAD, padBox, cullDots } from './dots-logic.js';
+import { VIEW_PAD, MIN_DOT_ZOOM, MAX_DOTS, padBox, cullDots } from './dots-logic.js';
 
 const TAP_BOX_PX = 40;
 const icons = {};
@@ -48,7 +49,12 @@ export function createDotLayer(map) {
 
   function refresh() {
     if (!enabled) return;
-    const { add, remove } = cullDots(spots, viewBox(), drawn);
+    if (map.getZoom() < MIN_DOT_ZOOM) {
+      clear();
+      return;
+    }
+    const c = map.getCenter();
+    const { add, remove } = cullDots(spots, viewBox(), drawn, { center: { lat: c.lat, lon: c.lng }, max: MAX_DOTS });
     for (const spot of remove) {
       group.removeLayer(drawn.get(spot));
       drawn.delete(spot);
