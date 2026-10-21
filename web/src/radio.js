@@ -1,21 +1,21 @@
 // RADIO: police, fire and highway patrol you can listen to while driving.
 //
-// Two ways to hear something:
-//  1. A public feed (Broadcastify or OpenMHz). Their pages are opened as-is in
-//     the truck's radio drawer (a second WebView the Android app owns), or in a
-//     new tab on a computer. The audio stays on their page; the app never
-//     relays it. That is the one way both sites allow.
-//  2. MY SCANNER: a stream from your own receiver (an RTL-SDR box running
+// Everything plays inside the app, never in a web page:
+//  1. LIVE CALLS: Broadcastify Calls through their licensed API. The channel
+//     list is read live for the county the truck is in (calls-directory.js),
+//     so only channels that are actually talking show up.
+//  2. RADIO STATIONS: public broadcast streams from the Radio Browser directory.
+//  3. MY SCANNER: a stream from your own receiver (an RTL-SDR box running
 //     trunk-recorder, SDRTrunk or OP25 that streams MP3 over the hotspot).
-//     That audio is yours, so it plays right here in the page.
 
-import { FEEDS, feedUrl, feedSourceText, BROADCASTIFY_COUNTY_URL } from './radio-feeds.js';
 import { KEYS } from './config.js';
 import { fetchCounty, fetchStations, sortStations } from './stations.js';
-import { CALL_PACKS, groupName } from './calls-groups.js';
+import { groupName } from './calls-groups.js';
+import { fetchChannels } from './calls-directory.js';
+import { buildPacks, channelList, ageText, LIVE_WINDOW_S } from './calls-directory-logic.js';
 import { createCallsPlayer, hasCallsKeys } from './calls.js';
 import { distanceM } from './geo.js';
-import { el, openSheet, closeSheet, toast } from './ui.js';
+import { el, openSheet, closeSheet, openSheetKind, toast } from './ui.js';
 import { trackPlayer } from './audio-duck.js';
 import { watchStream } from './stream-retry.js';
 
@@ -27,15 +27,16 @@ const MY_SCANNER_RETRY_MS = 4000;
 const STREAM_MAX_FAILURES = 20;
 const STREAM_STALL_MS = 15000; // no data this long after "stalled": the stream is dead, not slow
 const M_PER_MILE = 1609.344;
+const CHANNELS_RETRY_MS = 5 * 60 * 1000; // the live channel list is read again this often while the sheet is used
 
 function loadStore() {
   try {
     return Object.assign(
-      { lastFeedId: '', myScannerUrl: '', bcfyUser: '', bcfyPass: '', callsPack: '' },
+      { lastFeedId: '', myScannerUrl: '', bcfyUser: '', bcfyPass: '', callsPick: '' },
       JSON.parse(localStorage.getItem(STORE_KEY) || '{}'),
     );
   } catch (err) {
-    return { lastFeedId: '', myScannerUrl: '', bcfyUser: '', bcfyPass: '', callsPack: '' };
+    return { lastFeedId: '', myScannerUrl: '', bcfyUser: '', bcfyPass: '', callsPick: '' };
   }
 }
 
@@ -86,6 +87,12 @@ export function createRadio(app) {
   let callsStatus = ''; // "signing in", "listening", "2 waiting"
   let callsNow = null; // the call playing right now
   let callsLine = null; // status element in the open sheet, when it is open
+  let channels = null; // live channels near the truck (calls-directory), newest call first
+  let channelsTriedAt = 0;
+  let channelsLoading = false;
+  let channelsError = '';
+  const names = {}; // groupId -> short name, from the live list
+  let callsBox = null; // the live-calls part of the open sheet, redrawn on its own
 
   const calls = createCallsPlayer({
     onStatus(text) {
@@ -109,7 +116,7 @@ export function createRadio(app) {
     if (!callsLine) return;
     callsLine.textContent = '';
     if (playingId !== 'calls') return;
-    callsLine.appendChild(el('b', {}, callsNow ? `${groupName(callsNow.groupId)}` : 'Waiting for the first call'));
+    callsLine.appendChild(el('b', {}, callsNow ? names[callsNow.groupId] || groupName(callsNow.groupId) : 'Waiting for the first call'));
     callsLine.appendChild(el('span', {}, callsNow && callsNow.descr ? ` ${callsNow.descr} · ` : ' ') );
     callsLine.appendChild(el('span', {}, callsStatus));
   }
@@ -123,7 +130,8 @@ export function createRadio(app) {
     }
   }
 
-  function playCalls(pack) {
+  /** pick: { id: 'pack:police' | 'group:<groupId>', groups: [groupId] } */
+  function playCalls(pick) {
     const login = callsLogin(store, KEYS);
     if (!login.username || !login.password) {
       toast('Enter your Broadcastify login first.');
@@ -131,9 +139,9 @@ export function createRadio(app) {
     }
     stopPage();
     stopMine();
-    calls.start(pack.groups, { username: login.username, password: login.password });
+    calls.start(pick.groups, { username: login.username, password: login.password });
     playingId = 'calls';
-    store.callsPack = pack.id;
+    store.callsPick = pick.id;
     saveStore(store);
     announce();
     openList(); // redraw with the status line and the lit pack
@@ -141,27 +149,6 @@ export function createRadio(app) {
 
   function announce() {
     onChange(playingId);
-  }
-
-  function openPage(feed) {
-    const url = feed.pageUrl || feedUrl(feed);
-    stopMine();
-    stopCalls();
-    if (native) {
-      native.radioOpen(url, feed.name);
-    } else {
-      // Computer preview: a tab is the closest thing to the truck's drawer.
-      const win = window.open(url, '_blank', 'noopener');
-      if (!win) {
-        toast('The browser blocked the tab. Allow pop-ups for this page.');
-        return;
-      }
-    }
-    playingId = feed.id;
-    store.lastFeedId = feed.id;
-    saveStore(store);
-    announce();
-    closeSheet();
   }
 
   function stopPage() {
@@ -254,73 +241,119 @@ export function createRadio(app) {
     stopCalls();
   }
 
+  /** Reads the county the truck is in, then its live channels; redraws the sheet when they arrive. */
+  function loadChannels() {
+    if (channelsLoading || !hasCallsKeys()) return;
+    channelsLoading = true;
+    channelsTriedAt = Date.now();
+    channelsError = '';
+    fetchCounty(app.origin())
+      .then((found) => {
+        county = found;
+        return fetchChannels(found.ctid);
+      })
+      .then(
+        (list) => {
+          channels = list;
+          for (const c of list) names[c.groupId] = c.short;
+        },
+        (err) => {
+          console.warn('channels:', err);
+          channelsError = 'Could not load the live channels. Check the hotspot, then try again.';
+        },
+      )
+      .then(() => {
+        channelsLoading = false;
+        refreshCallsBox();
+      });
+  }
+
+  function loginFields(body) {
+    if (callsLogin(store, KEYS).builtIn) return () => {};
+    const user = el('input', { type: 'text', placeholder: 'Broadcastify username', value: store.bcfyUser, autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' });
+    const pass = el('input', { type: 'password', placeholder: 'Broadcastify password', value: store.bcfyPass });
+    const remember = () => {
+      store.bcfyUser = user.value.trim();
+      store.bcfyPass = pass.value;
+      saveStore(store);
+    };
+    user.addEventListener('change', remember);
+    pass.addEventListener('change', remember);
+    body.appendChild(el('div', { class: 'search-row' }, user));
+    body.appendChild(el('div', { class: 'search-row' }, pass));
+    body.appendChild(el('p', { class: 'sheet-sub' }, 'Your login stays on this unit.'));
+    return remember;
+  }
+
+  /** Redraws only the live-calls part of the open sheet (the rest of the sheet is left alone). */
+  function refreshCallsBox() {
+    if (openSheetKind() !== 'radio' || !callsBox || !callsBox.parentNode) return;
+    callsBox.textContent = '';
+    fillCalls(callsBox);
+  }
+
   function callsSection(body) {
-    body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'LIVE CALLS, PLAYED HERE')));
+    callsBox = el('div');
+    body.appendChild(callsBox);
+    fillCalls(callsBox);
+  }
+
+  // Everything plays inside the app through the Broadcastify Calls API: no web
+  // pages, no sign-in screens. The list is read live, so only channels that are
+  // actually talking show up (8 of the old 24 fixed channels were dead).
+  function fillCalls(body) {
+    const where = county ? ` · ${county.name.toUpperCase()} COUNTY` : '';
+    body.appendChild(el('div', { class: 'section' }, el('h3', {}, `LIVE CALLS NEAR YOU${where}`)));
     if (!hasCallsKeys()) {
       body.appendChild(
         el(
           'p',
           { class: 'sheet-sub' },
-          'Phoenix Police, Phoenix Fire and DPS calls can play inside this app through the Broadcastify Calls API ' +
+          'Police and fire calls play inside this app through the Broadcastify Calls API ' +
             '(bcfy.io/dev, prepaid, from $5). Put the key id, secret and app id in keys.local.json and rebuild.',
         ),
       );
       return;
     }
-    let remember = () => {};
-    if (callsLogin(store, KEYS).builtIn) {
-      body.appendChild(el('p', { class: 'sheet-sub' }, 'Login: built into the app, nothing to type. Calls are a few seconds behind live and metered to your prepaid balance.'));
-    } else {
-      const user = el('input', { type: 'text', placeholder: 'Broadcastify username', value: store.bcfyUser, autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' });
-      const pass = el('input', { type: 'password', placeholder: 'Broadcastify password', value: store.bcfyPass });
-      remember = () => {
-        store.bcfyUser = user.value.trim();
-        store.bcfyPass = pass.value;
-        saveStore(store);
-      };
-      user.addEventListener('change', remember);
-      pass.addEventListener('change', remember);
-      body.appendChild(el('div', { class: 'search-row' }, user));
-      body.appendChild(el('div', { class: 'search-row' }, pass));
-      body.appendChild(el('p', { class: 'sheet-sub' }, 'Your login stays on this unit. Calls are a few seconds behind live and metered to your prepaid balance.'));
-    }
+    const remember = loginFields(body);
     callsLine = el('p', { class: 'calls-line' });
     body.appendChild(callsLine);
     renderCallsLine();
-    for (const pack of CALL_PACKS) {
+    if (!channels) {
+      body.appendChild(el('p', { class: 'sheet-sub' }, channelsError || 'Finding channels with live calls near you...'));
+      if (channelsError) {
+        body.appendChild(
+          el('button', { class: 'pill wide', onclick: () => { channelsTriedAt = 0; loadChannels(); refreshCallsBox(); } }, 'TRY AGAIN'),
+        );
+      }
+      return;
+    }
+    const nowS = Math.floor(Date.now() / 1000);
+    const list = channelList(channels, nowS);
+    if (!list.length) {
+      body.appendChild(el('p', { class: 'sheet-sub' }, 'No calls in this county in the last day. Try again later.'));
+      return;
+    }
+    const row = el('div', { class: 'pack-row' });
+    for (const pack of buildPacks(channels)) {
+      const id = `pack:${pack.id}`;
+      const button = el('button', { class: 'pill', onclick: () => { remember(); playCalls({ id, groups: pack.groups }); } }, pack.name.toUpperCase());
+      if (playingId === 'calls' && store.callsPick === id) button.classList.add('on');
+      row.appendChild(button);
+    }
+    body.appendChild(row);
+    body.appendChild(el('p', { class: 'sheet-sub' }, 'Tap a group above, or one channel below. Newest calls first.'));
+    for (const c of list) {
+      const id = `group:${c.groupId}`;
+      const live = nowS - c.lastTs <= LIVE_WINDOW_S;
       const button = el(
         'button',
-        { class: 'result', onclick: () => { remember(); playCalls(pack); } },
-        el('b', {}, pack.name),
-        el('span', {}, pack.groups.map(groupName).join(' · ')),
+        { class: live ? 'result' : 'result quiet', onclick: () => { remember(); playCalls({ id, groups: [c.groupId] }); } },
+        el('b', {}, c.name),
+        el('span', {}, [c.agency, c.type, `last call ${ageText(c.lastTs, nowS)}`].filter(Boolean).join(' · ')),
       );
-      if (playingId === 'calls' && store.callsPack === pack.id) button.classList.add('on');
+      if (playingId === 'calls' && store.callsPick === id) button.classList.add('on');
       body.appendChild(button);
-    }
-  }
-
-  function countySection(body) {
-    body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'EVERY FEED IN THIS COUNTY')));
-    const button = el('button', { class: 'pill wide' }, county ? `ALL ${county.name.toUpperCase()} COUNTY FEEDS` : 'FINDING YOUR COUNTY...');
-    button.disabled = !county;
-    button.addEventListener('click', () => {
-      if (!county) return;
-      openPage({ id: `county-${county.ctid}`, kind: 'broadcastify', feed: county.ctid, name: `${county.name} County feeds`, pageUrl: `${BROADCASTIFY_COUNTY_URL}${county.ctid}` });
-    });
-    body.appendChild(button);
-    body.appendChild(
-      el(
-        'p',
-        { class: 'sheet-sub' },
-        "Broadcastify's full list for the county you are in: police, fire, ham repeaters, GMRS, rail, weather, with who is online and how many are listening. Pick one on their page.",
-      ),
-    );
-    if (!county) {
-      fetchCounty(app.origin()).then((found) => {
-        county = found;
-        button.textContent = `ALL ${found.name.toUpperCase()} COUNTY FEEDS`;
-        button.disabled = false;
-      });
     }
   }
 
@@ -369,24 +402,11 @@ export function createRadio(app) {
     body.appendChild(el('p', { class: 'credits' }, 'Station directory: Radio Browser (public domain). Each stream comes straight from that broadcaster.'));
   }
 
-  function feedRow(entry) {
-    const feed = entry.feed;
-    const miles = Math.round(entry.miles);
-    const button = el(
-      'button',
-      { class: 'result', onclick: () => openPage(feed) },
-      el('b', {}, feed.name),
-      el('span', {}, `${feed.group} · ${miles} mi · ${feedSourceText(feed)}`),
-      feed.note ? el('span', { class: 'result-note' }, feed.note) : null,
-    );
-    if (playingId === feed.id) button.classList.add('on');
-    return button;
-  }
-
   function openList() {
     const body = openSheet('radio', 'Radio', () => {
       callsLine = null;
     });
+    if (!channelsLoading && Date.now() - channelsTriedAt > CHANNELS_RETRY_MS) loadChannels();
 
     if (playingId) {
       body.appendChild(
@@ -395,6 +415,7 @@ export function createRadio(app) {
     }
 
     callsSection(body);
+    stationsSection(body);
 
     body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'MY SCANNER')));
     const input = el('input', {
@@ -413,31 +434,14 @@ export function createRadio(app) {
     if (playingId === 'mine') play.classList.add('on');
     body.appendChild(el('div', { class: 'search-row' }, input, play));
     body.appendChild(
-      el('p', { class: 'sheet-sub' }, 'Your own RTL-SDR receiver streaming MP3 over the hotspot. Plays right here, no page needed.'),
+      el('p', { class: 'sheet-sub' }, 'Your own RTL-SDR receiver streaming MP3 over the hotspot. Plays right here.'),
     );
-
-    body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'LIVE PUBLIC SAFETY FEEDS, NEAREST FIRST')));
-    body.appendChild(
-      el(
-        'p',
-        { class: 'sheet-sub' },
-        native
-          ? 'Opens the feed page in the radio drawer. Press play on it; it keeps playing while you drive. ' +
-            'Broadcastify pages need their sign-in each time the app restarts (their rules, not ours), so the ' +
-            'LIVE CALLS above are the no-touch way. OpenMHz pages need no sign-in.'
-          : 'Opens the feed page in a new tab (on the truck it opens in the radio drawer).',
-      ),
-    );
-    for (const entry of sortFeedsByDistance(FEEDS, app.origin())) body.appendChild(feedRow(entry));
-
-    countySection(body);
-    stationsSection(body);
 
     body.appendChild(
       el(
         'p',
         { class: 'credits' },
-        'Feeds are volunteer receivers on Broadcastify and OpenMHz; their pages carry their own ads and terms. ' +
+        'Live calls: Broadcastify Calls, recorded by volunteer receivers and played here through their licensed API. ' +
           'Encrypted channels cannot be heard anywhere. Listening is legal in Arizona; using what you hear to commit a crime is not.',
       ),
     );

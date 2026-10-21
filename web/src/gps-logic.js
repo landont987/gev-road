@@ -59,3 +59,57 @@ export function gpsSpokenProblem(status) {
   if (!hasGps(status)) return 'This unit reports no GPS receiver.';
   return '';
 }
+
+/** Satellites a GPS needs in use before it can give a position. */
+const MIN_FIX_SATELLITES = 4;
+
+/**
+ * The GPS help card (#64): what is wrong and what to do, in plain words, while
+ * there is no fresh fix. Returns { key, title, body, settings } (settings: show the
+ * OPEN LOCATION SETTINGS button) or null when there is nothing useful to say.
+ * searchingS: seconds since the app started looking.
+ */
+export function gpsHelp(status, searchingS) {
+  if (!status) return null;
+  if (!status.permission) {
+    return {
+      key: 'permission',
+      title: 'Location permission is off',
+      body: 'Open Settings, Apps, GEV Road, Permissions and allow Location. Then reopen GEV Road.',
+      settings: false,
+    };
+  }
+  if (!status.locationOn) {
+    return { key: 'location-off', title: 'Location is turned off on this unit', body: 'Tap below and switch Location on.', settings: true };
+  }
+  if (!hasGps(status)) {
+    return {
+      key: 'no-receiver',
+      title: 'This unit has no GPS receiver',
+      body: 'It cannot find its own position. A USB GPS stick (about $15) plugged into the unit fixes this.',
+      settings: false,
+    };
+  }
+  if (!gpsOn(status)) {
+    return { key: 'gps-off', title: 'GPS is switched off', body: 'Tap below and set Location to use GPS.', settings: true };
+  }
+  if (status.satellites === 0 && searchingS >= NO_SATELLITES_WARN_S) {
+    return {
+      key: 'antenna',
+      title: 'GPS is on but sees no satellites',
+      body:
+        'The GPS antenna is probably unplugged. On the back of the unit, find the cable marked GPS ' +
+        '(a small black puck on a wire). Plug it in and put the puck where it can see the sky.',
+      settings: false,
+    };
+  }
+  if (status.satellites > 0) {
+    return {
+      key: 'finding',
+      title: `Finding your position: ${status.used} of ${MIN_FIX_SATELLITES} satellites`,
+      body: `It sees ${status.satellites} satellites. A first fix can take a few minutes; open sky helps.`,
+      settings: false,
+    };
+  }
+  return { key: 'looking', title: 'Looking for GPS satellites', body: 'This can take a minute or two after the unit starts.', settings: false };
+}

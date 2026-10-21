@@ -46,6 +46,8 @@ export const TRAFFIC_REFRESH_MS = 5 * 60 * 1000;
 // source clients (ifnull/radio-feed-watch, arjohnsonn/austin-incident-map).
 export const BCFY_AUTH_URL = 'https://api.bcfy.io/common/v1/auth';
 export const BCFY_LIVE_URL = 'https://api.bcfy.io/calls/v1/live/';
+// Talkgroups with calls in a county (POST, secs_ago): the live channel list. Needs only the app key.
+export const BCFY_GROUPS_URL = 'https://api.bcfy.io/calls/v1/groups_ctid/';
 export const BCFY_POLL_MS = 6000;
 export const BCFY_TOKEN_TTL_S = 3600;
 

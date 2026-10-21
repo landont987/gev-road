@@ -627,3 +627,53 @@ body.sheet-open .pop {
   text-align: center;
   white-space: pre-line;
 }
+
+/* Live calls: one-tap packs in a row (no flex gap on WebView 66, so margins). */
+.pack-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 4px 0 6px;
+}
+.pack-row .pill {
+  margin: 0 10px 10px 0;
+}
+/* A channel with no call in the last hour: still listed and tappable, just quieter. */
+.result.quiet {
+  opacity: 0.6;
+}
+
+/* GPS help (#64): says in plain words why there is no position, until a fix arrives.
+   Same slot as the road card; it sits under it, and the two rarely meet (road cards need a fix). */
+#gpshelp {
+  position: absolute;
+  z-index: 1000;
+  top: 12px;
+  left: 196px;
+  right: 152px;
+  padding: 12px 16px 14px 22px;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-left: 10px solid var(--warn);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+#turnbar:not([hidden]) ~ #gpshelp {
+  top: 112px;
+}
+body.sheet-open #gpshelp {
+  left: 452px;
+}
+#gpshelp-title {
+  display: block;
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+#gpshelp-body {
+  display: block;
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+#gpshelp-settings {
+  margin-top: 10px;
+}
