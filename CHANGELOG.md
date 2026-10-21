@@ -5,6 +5,14 @@ and `version` in `package.json`, so the ☰ menu's VERSION line tells builds apa
 Each version below has a git tag (`v0.3.9`, ...). APKs are never committed or
 uploaded: the API keys are built into them.
 
+## 0.3.15 (2026-10-20)
+Drive-hardening after the first head-unit drive: make the fixes stick and remove ways the map could go wrong.
+- GPS fixes are told apart by the unit's up-time, not its clock, so a wrong or unsynced clock can no longer drop real fixes.
+- The demo-drive buttons are gone from the real truck's menu (they stay on a computer and on test builds). On the truck a mistap could set the GPS to the fake demo drive and freeze the arrow downtown; that can't happen now.
+- The map no longer flips between moving and stopped when GPS drops for a few seconds under an overpass, which had been churning the dots and reopening setup panels.
+- A scanner or radio station that keeps failing (a wrong address or a dead stream) now stops after about a minute and a half with a clear message, instead of retrying on your hotspot forever. A normal hotspot blip still recovers on its own.
+- If the voice ever hangs, the radio comes back to full volume on its own after twelve seconds instead of staying quiet.
+
 ## 0.3.14 (2026-10-20)
 Fixes from the first head-unit drive (issue #46): no GPS, a slow map, a Broadcastify login, silent channels.
 - GPS: the app listens to every location provider the unit has (gps, network, passive), asks the chip for assistance data at start, and centers the map on where the truck was last seen. While there is no fix the status card says why: LOCATION OFF, NO GPS PERMISSION, NO GPS RECEIVER, or GPS 3/11 SATS while searching. The ☰ menu's LOCATION section explains, warns about the antenna after two minutes with no satellite, and offers OPEN LOCATION SETTINGS. A GPS that cannot work is spoken once.
