@@ -168,6 +168,8 @@ export function createRoad(deps) {
   }
 
   return {
+    /** How many dots are DOM markers right now (the menu's SCREEN line, #65). */
+    count: dots.count,
     hasKey: () => !!KEYS.az511,
     setEnabled(on) {
       enabled = on && !!KEYS.az511;

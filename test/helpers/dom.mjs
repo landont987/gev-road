@@ -49,13 +49,17 @@ export function fakeNode(tag) {
  * (the whole world unless given), 'moveend' listeners and the layers added.
  * moveTo(box) moves the view and fires 'moveend', like a pan on the real map.
  */
-export function fakeMap(box) {
+export function fakeMap(box, zoom = 13) {
   let view = box || { south: -90, west: -180, north: 90, east: 180 };
   const listeners = {};
   return {
     layers: [],
     views: [], // every setView center, newest last
-    getZoom: () => 13,
+    zoom,
+    getZoom() {
+      return this.zoom;
+    },
+    getCenter: () => ({ lat: (view.south + view.north) / 2, lng: (view.west + view.east) / 2 }),
     setView(center) {
       this.views.push(center);
       return this;

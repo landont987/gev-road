@@ -45,7 +45,7 @@ function canOpenLocationSettings() {
   return !!(window.GevNative && typeof window.GevNative.openLocationSettings === 'function');
 }
 
-/** app: { gps, traffic, routing, dataText(), memoryText(), gpsText(), openVoice(), openDetector(), openEngine() } */
+/** app: { gps, traffic, routing, dataText(), memoryText(), gpsText(), screenLine(), openVoice(), openDetector(), openEngine() } */
 export function openMenu(app) {
   const body = openSheet('menu', 'Menu');
   const gps = app.gps;
@@ -96,6 +96,7 @@ export function openMenu(app) {
   body.appendChild(el('div', { class: 'section' }, el('h3', {}, 'DATA')));
   body.appendChild(el('p', { class: 'sheet-sub' }, app.dataText()));
   body.appendChild(el('p', { class: 'sheet-sub' }, app.memoryText()));
+  body.appendChild(el('p', { class: 'sheet-sub' }, app.screenLine()));
   body.appendChild(
     el(
       'p',

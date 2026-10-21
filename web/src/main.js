@@ -14,6 +14,7 @@ import {
 import { $, setOn, toast, closeSheet, openSheetKind } from './ui.js';
 import { withSpeed } from './fix-logic.js';
 import { gpsShortText, gpsMenuText, gpsSpokenProblem } from './gps-logic.js';
+import { swipeStats, screenText } from './swipe-logic.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { createGps } from './gps.js';
 import { createTruck } from './truck.js';
@@ -328,7 +329,34 @@ detector.onStateChange(() => {
 function openEngine() {
   openEnginePanel({ engine, isMoving: () => moving });
 }
-$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, memoryText, gpsText, openVoice, openDetector, openEngine }));
+// The frame times of a finger drag, for the menu's SCREEN line (#65): numbers
+// from the truck instead of "slow and glitchy".
+let swipeFrames = [];
+let swipeLastAt = 0;
+let swipeRaf = 0;
+let lastSwipe = null;
+function swipeFrame(now) {
+  if (swipeLastAt) swipeFrames.push(now - swipeLastAt);
+  swipeLastAt = now;
+  swipeRaf = requestAnimationFrame(swipeFrame);
+}
+map.on('dragstart', () => {
+  swipeFrames = [];
+  swipeLastAt = 0;
+  cancelAnimationFrame(swipeRaf);
+  swipeRaf = requestAnimationFrame(swipeFrame);
+});
+map.on('dragend', () => {
+  cancelAnimationFrame(swipeRaf);
+  swipeRaf = 0;
+  lastSwipe = swipeStats(swipeFrames) || lastSwipe;
+});
+function screenLine() {
+  const dots = cameras.count() + plates.count() + road.count();
+  return screenText({ width: window.innerWidth, height: window.innerHeight, ratio: window.devicePixelRatio }, lastSwipe, dots);
+}
+
+$('btn-menu').addEventListener('click', () => openMenu({ gps, traffic, routing, dataText, memoryText, gpsText, screenLine, openVoice, openDetector, openEngine }));
 $('btn-recenter').addEventListener('click', () => truck.setFollowing(true));
 $('btn-sheet-close').addEventListener('click', closeSheet);
 // A long press asks "Drive here?", but never while moving: that sheet needs a tap to close (#54).
