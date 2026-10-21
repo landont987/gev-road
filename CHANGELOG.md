@@ -5,6 +5,13 @@ and `version` in `package.json`, so the ☰ menu's VERSION line tells builds apa
 Each version below has a git tag (`v0.3.9`, ...). APKs are never committed or
 uploaded: the API keys are built into them.
 
+## 0.3.16 (2026-10-20)
+Swipe notifications away, plus fixes from a second pre-drive bug sweep.
+- You can now swipe the pop-up road cards and the message toasts off the screen with a finger, instead of waiting for them to time out. A tap still works, and a half-swipe snaps back.
+- Low-data mode: after a failed road-info fetch the app now retries in about two minutes as intended (it had been stretching to around twelve minutes in low-data mode, exactly when the hotspot is flaky).
+- Flipping an unrelated switch no longer re-draws and flickers the plate-reader dots.
+- Rural tiles with no plate readers (a constant stream of harmless 404s) no longer leave a timer running after each one, so there is less background work on every map move.
+
 ## 0.3.15 (2026-10-20)
 Drive-hardening after the first head-unit drive: make the fixes stick and remove ways the map could go wrong.
 - GPS fixes are told apart by the unit's up-time, not its clock, so a wrong or unsynced clock can no longer drop real fixes.
