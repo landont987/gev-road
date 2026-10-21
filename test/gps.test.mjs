@@ -34,6 +34,18 @@ test('truck source: a fix carries its provider and the status reaches the hook',
   delete window.GevNative;
 });
 
+test('the parked spot inside the status is shown once, by push or by readStatus', () => {
+  const json = JSON.stringify({ satellites: 0, lastKnown: { lat: 33.6, lon: -112.2, ageS: 900 } });
+  window.GevNative = { gpsStatusJson: () => json };
+  const seen = [];
+  const gps = createGps(() => {}, { onLastKnown: (p) => seen.push(p) });
+  gps.readStatus();
+  window.gevOnGpsStatus(json);
+  window.gevOnLastKnown(33.6, -112.2, 900);
+  assert.deepEqual(seen, [{ lat: 33.6, lon: -112.2, ageS: 900 }]);
+  delete window.GevNative;
+});
+
 test('last known position: the start view only, and only before the first fix', () => {
   window.GevNative = {};
   const map = fakeMap();

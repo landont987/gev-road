@@ -16,8 +16,8 @@ import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * The truck's position from every provider the unit has (#64), and the facts
@@ -57,13 +57,18 @@ final class GpsWatch {
     private static final String[] PROVIDERS = {
             LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER };
     private static final String[] ASSIST_COMMANDS = { "force_xtra_injection", "force_time_injection" };
+    /** A network or passive fix rougher than this is noise next to the GPS: not shown. */
+    static final float OTHER_PROVIDER_MAX_ACCURACY_M = 500f;
 
     private final Context ctx;
     private final LocationManager locations;
     private final Listener listener;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final FixPicker picker = new FixPicker();
-    private final List<String> listening = new ArrayList<>();
+    // Read by statusJson on a WebView thread while start/stop write it on the UI thread.
+    private final List<String> listening = new CopyOnWriteArrayList<>();
+    private volatile Location lastKnown; // where the truck was last seen, for the start view
+    private volatile long lastKnownAgeMs;
     private boolean running;
     private boolean gnssStarted;
     private int satellites;
@@ -73,8 +78,8 @@ final class GpsWatch {
     private final LocationListener fixes = new LocationListener() {
         @Override
         public void onLocationChanged(Location location) {
-            String provider = location.getProvider();
-            if (!picker.accept(provider, location.getTime(), SystemClock.elapsedRealtime())) return;
+            if (!usable(location)) return;
+            if (!picker.accept(location.getProvider(), location.getTime(), SystemClock.elapsedRealtime())) return;
             listener.onFix(location);
         }
 
@@ -151,7 +156,7 @@ final class GpsWatch {
         if (listening.isEmpty()) Log.e(TAG, "no location provider could start; providers: " + all);
         try {
             locations.registerGnssStatusCallback(gnss, main);
-        } catch (SecurityException | RuntimeException e) {
+        } catch (RuntimeException e) {
             Log.w(TAG, "satellite status not available", e);
         }
         askForAssistance();
@@ -164,12 +169,24 @@ final class GpsWatch {
         running = false;
         try {
             locations.removeUpdates(fixes);
-            locations.unregisterGnssStatusCallback(gnss);
         } catch (RuntimeException e) {
             Log.w(TAG, "location stop", e);
         }
+        try {
+            locations.unregisterGnssStatusCallback(gnss);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "satellite status stop", e);
+        }
         gnssStarted = false;
+        satellites = 0;
+        satellitesUsed = 0;
         listening.clear();
+    }
+
+    /** A GPS fix always; another provider only when it is close to the truth. */
+    static boolean usable(Location fix) {
+        if (FixPicker.GPS.equals(fix.getProvider())) return true;
+        return fix.hasAccuracy() && fix.getAccuracy() <= OTHER_PROVIDER_MAX_ACCURACY_M;
     }
 
     /** Assistance data makes a cold fix take seconds instead of minutes. Best effort. */
@@ -197,11 +214,14 @@ final class GpsWatch {
                 Log.w(TAG, "last known location from " + provider, e);
             }
         }
-        if (best == null) return;
+        if (best == null || !usable(best)) return;
         long age = ageMs(best);
         if (age < LAST_FIX_MAX_AGE_MS) {
             if (picker.accept(best.getProvider(), best.getTime(), SystemClock.elapsedRealtime())) listener.onFix(best);
         } else if (age < LAST_SEEN_MAX_AGE_MS) {
+            // Also kept in statusJson: at a cold start this push lands before the page exists.
+            lastKnown = best;
+            lastKnownAgeMs = age;
             listener.onLastKnown(best, age);
         }
     }
@@ -226,8 +246,10 @@ final class GpsWatch {
     /**
      * The GPS state for the page, as JSON:
      * {permission, locationOn, providers: [every provider the unit has], enabled: [the ones switched on],
-     *  listening: [the ones this app hears], gnss: bool, satellites, used, lastProvider, lastFixAgeS}.
-     * lastFixAgeS is -1 before the first fix.
+     *  listening: [the ones this app hears], gnss: bool, satellites, used, lastProvider, lastFixAgeS,
+     *  lastKnown: {lat, lon, ageS}}. lastFixAgeS is -1 before the first fix; lastKnown is absent
+     * without a saved position. Called from a WebView thread too (the bridge), so it reads only
+     * what is safe to read there.
      */
     String statusJson(boolean permission) {
         JSONObject out = new JSONObject();
@@ -258,7 +280,15 @@ final class GpsWatch {
             out.put("lastProvider", picker.lastProvider());
             long age = picker.ageMs(SystemClock.elapsedRealtime());
             out.put("lastFixAgeS", age < 0 ? -1 : age / 1000);
-        } catch (JSONException e) {
+            Location seen = lastKnown;
+            if (seen != null) {
+                JSONObject where = new JSONObject();
+                where.put("lat", seen.getLatitude());
+                where.put("lon", seen.getLongitude());
+                where.put("ageS", lastKnownAgeMs / 1000);
+                out.put("lastKnown", where);
+            }
+        } catch (JSONException | RuntimeException e) {
             Log.w(TAG, "gps status json", e);
         }
         return out.toString();

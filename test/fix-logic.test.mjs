@@ -38,3 +38,11 @@ test('a carried speed is not carried again: a fast unit still gets its speed rec
   const c = withSpeed(at(33.45, -112.07, null), b, 1200, 1400);
   assert.equal(c.speed, null, 'the second short gap gets no carried speed');
 });
+
+test('withSpeed derives nothing across a provider change (a network fix next to a gps fix)', () => {
+  const prev = { lat: 33.45, lon: -112.07, speed: null, provider: 'gps' };
+  const fix = { lat: 33.46, lon: -112.07, speed: null, provider: 'network' };
+  assert.equal(withSpeed(fix, prev, 0, 2000).speed, null);
+  const same = { lat: 33.46, lon: -112.07, speed: null, provider: 'gps' };
+  assert.ok(withSpeed(same, prev, 0, 2000).speed > 100, 'the same provider still gets a speed');
+});

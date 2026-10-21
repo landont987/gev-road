@@ -36,28 +36,39 @@ export function createGps(onFix, hooks = {}) {
     });
   };
 
-  // Why there is no fix: the location setting, the permission, the satellites (#64).
-  window.gevOnGpsStatus = (json) => {
+  let lastKnownShown = false;
+
+  // Where the truck was last seen (up to hours ago): the start view, not a live fix.
+  function showLastKnown(lat, lon, ageS) {
+    if (source !== 'truck' || !hooks.onLastKnown || lastKnownShown) return;
+    lastKnownShown = true;
+    hooks.onLastKnown({ lat, lon, ageS: Number(ageS) || 0 });
+  }
+
+  function applyStatus(json) {
     try {
       status = typeof json === 'string' ? JSON.parse(json) : json;
     } catch (err) {
       console.warn('gps status:', err);
-      return;
+      return false;
     }
-    if (hooks.onStatus) hooks.onStatus(status);
+    // The app's first pushes land before this page exists, so the state also carries the parked spot.
+    if (status && status.lastKnown) showLastKnown(status.lastKnown.lat, status.lastKnown.lon, status.lastKnown.ageS);
+    return true;
+  }
+
+  // Why there is no fix: the location setting, the permission, the satellites (#64).
+  window.gevOnGpsStatus = (json) => {
+    if (applyStatus(json) && hooks.onStatus) hooks.onStatus(status);
   };
 
-  // Where the truck was last seen (up to hours ago): the start view, not a live fix.
-  window.gevOnLastKnown = (lat, lon, ageS) => {
-    if (source !== 'truck' || !hooks.onLastKnown) return;
-    hooks.onLastKnown({ lat, lon, ageS: Number(ageS) || 0 });
-  };
+  window.gevOnLastKnown = showLastKnown;
 
-  /** The app's GPS state, read fresh when the menu opens (a bridge call), else the last pushed one. */
+  /** The app's GPS state, read fresh (a bridge call: at start and when the menu opens), else the last pushed one. */
   function readStatus() {
     if (window.GevNative && typeof window.GevNative.gpsStatusJson === 'function') {
       try {
-        status = JSON.parse(window.GevNative.gpsStatusJson());
+        applyStatus(window.GevNative.gpsStatusJson());
       } catch (err) {
         console.warn('gps status:', err);
       }

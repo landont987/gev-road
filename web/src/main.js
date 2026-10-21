@@ -272,13 +272,17 @@ let gpsProblemSpoken = '';
 function onGpsStatus(status) {
   updateStatus();
   const problem = gpsSpokenProblem(status);
-  if (problem && problem !== gpsProblemSpoken) {
-    gpsProblemSpoken = problem;
-    toast(problem, 8000);
-    voice.alert('link', problem);
+  if (problem !== gpsProblemSpoken) {
+    gpsProblemSpoken = problem; // '' once it clears, so the same problem is spoken again if it returns
+    if (problem) {
+      toast(problem, 8000);
+      voice.alert('link', problem);
+    }
   }
 }
 const gps = createGps(onFix, { onStatus: onGpsStatus, onLastKnown: (where) => truck.setStart(where) });
+// The app started its GPS before this page loaded: its first pushes were lost, so ask once now.
+if (gps.hasTruckGps()) onGpsStatus(gps.readStatus());
 function gpsText() {
   return gpsMenuText(gps.readStatus(), Math.round((Date.now() - startedAt) / 1000));
 }
