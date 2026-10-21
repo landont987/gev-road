@@ -82,13 +82,28 @@ export function groupChunks(groupIds) {
   return chunks;
 }
 
-const START_WINDOW_S = 120;
+const START_WINDOW_S = 600;
+const START_MAX_CALLS = 3;
+/** With no call this long, the status says how long the channel has been quiet. */
+export const QUIET_AFTER_S = 60;
 
-/** The first answer (init=1) brings the last ~25 calls, some many minutes old: start from the last 2 minutes. */
+/**
+ * The first answer (init=1) brings the last ~25 calls, some many minutes old.
+ * Start with the newest few from the last 10 minutes: something to hear within
+ * seconds of the tap, without replaying a backlog (#67).
+ */
 export function recentOnly(calls, serverTime) {
   const now = Number(serverTime);
   if (!Number.isFinite(now) || now <= 0) return calls;
-  return calls.filter((c) => c.ts >= now - START_WINDOW_S);
+  return calls.filter((c) => c.ts >= now - START_WINDOW_S).slice(-START_MAX_CALLS);
+}
+
+/** The status with nothing queued: "listening", or how long the channel has been quiet. Pure. */
+export function idleStatus(lastCallTs, nowS) {
+  if (!(lastCallTs > 0)) return 'listening, no call yet';
+  const quietS = nowS - lastCallTs;
+  if (quietS < QUIET_AFTER_S) return 'listening';
+  return `quiet for ${Math.max(1, Math.round(quietS / 60))} min`;
 }
 
 /** The query for one chunk: plain commas between ids, each id encoded on its own. */
@@ -121,6 +136,8 @@ export function createCallsPlayer(callbacks) {
   let polling = false; // a poll is out: the next one waits (every live request is billed)
   let generation = 0; // bumped by start and stop: answers for an older run are dropped
   let lastError = ''; // a passing error is reported once, until a poll works again
+  let lastCallTs = 0; // the newest call the server listed (played or not), for "quiet for N min"
+  let serverTime = 0; // the server's clock from its last answer (the unit's clock may be off)
 
   async function authenticate(mine) {
     const now = Math.floor(Date.now() / 1000);
@@ -142,11 +159,15 @@ export function createCallsPlayer(callbacks) {
 
   async function poll(mine) {
     await authenticate(mine);
-    const mineChunks = chunks;
-    for (const chunk of mineChunks) {
-      if (mine !== generation) return;
-      await pollChunk(chunk, mine);
-    }
+    if (mine !== generation) return;
+    // A pack over 5 groups is two requests: side by side, not one after the other (#67).
+    // Every request settles before this returns (no Promise.allSettled in Chrome 66), so the
+    // next tick never overlaps a request still out; the first error is rethrown after.
+    let firstError = null;
+    await Promise.all(chunks.map((chunk) => pollChunk(chunk, mine).catch((err) => {
+      if (!firstError) firstError = err;
+    })));
+    if (firstError) throw firstError;
   }
 
   async function pollChunk(chunk, mine) {
@@ -167,11 +188,14 @@ export function createCallsPlayer(callbacks) {
     if (mine !== generation) return;
     const first = !chunk.pos;
     if (Number.isFinite(Number(answer.lastPos))) chunk.pos = Number(answer.lastPos);
-    const fresh = first ? recentOnly(newCalls(answer, seen), answer.serverTime) : newCalls(answer, seen);
+    if (Number(answer.serverTime) > 0) serverTime = Number(answer.serverTime);
+    const listed = newCalls(answer, seen);
+    for (const call of listed) if (call.ts > lastCallTs) lastCallTs = call.ts;
+    const fresh = first ? recentOnly(listed, answer.serverTime) : listed;
     for (const call of fresh) seen[call.key] = true;
     // Two requests (a preset over 5 groups) can each bring calls: keep them in time order.
     queue = queue.concat(fresh).sort((a, b) => a.ts - b.ts).slice(-MAX_QUEUE);
-    callbacks.onStatus(queue.length ? `${queue.length} waiting` : 'listening');
+    callbacks.onStatus(queue.length ? `${queue.length} waiting` : idleStatus(lastCallTs, serverTime || now));
     playNext();
   }
 
@@ -255,6 +279,8 @@ export function createCallsPlayer(callbacks) {
       running = true;
       seen = {};
       queue = [];
+      lastCallTs = 0;
+      serverTime = 0;
       audio = new Audio();
       trackPlayer(audio);
       audio.preload = 'auto';

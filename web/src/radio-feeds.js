@@ -249,3 +249,8 @@ export function feedUrl(feed) {
 export function feedSource(feed) {
   return feed.kind === 'openmhz' ? 'OpenMHz' : 'Broadcastify';
 }
+
+/** What a feed row says about where it plays: their page, and for Broadcastify their own sign-in (#66). */
+export function feedSourceText(feed) {
+  return feed.kind === 'openmhz' ? 'OpenMHz page, no sign-in' : 'Broadcastify page, sign in there';
+}

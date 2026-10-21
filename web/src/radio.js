@@ -9,7 +9,8 @@
 //     trunk-recorder, SDRTrunk or OP25 that streams MP3 over the hotspot).
 //     That audio is yours, so it plays right here in the page.
 
-import { FEEDS, feedUrl, feedSource, BROADCASTIFY_COUNTY_URL } from './radio-feeds.js';
+import { FEEDS, feedUrl, feedSourceText, BROADCASTIFY_COUNTY_URL } from './radio-feeds.js';
+import { KEYS } from './config.js';
 import { fetchCounty, fetchStations, sortStations } from './stations.js';
 import { CALL_PACKS, groupName } from './calls-groups.js';
 import { createCallsPlayer, hasCallsKeys } from './calls.js';
@@ -47,6 +48,19 @@ export function sortFeedsByDistance(feeds, origin) {
   return feeds
     .map((feed) => ({ feed, miles: distanceM(origin, feed.area) / M_PER_MILE }))
     .sort((a, b) => a.miles - b.miles);
+}
+
+/**
+ * The Broadcastify login for the live calls: typed on the unit once, or built into
+ * the app from keys.local.json so nothing is ever typed there (#66). Pure, for tests.
+ */
+export function callsLogin(store, keys) {
+  // Both halves from one place: a typed username never borrows the built-in password.
+  const typed = (store.bcfyUser || '').trim();
+  if (typed) return { username: typed, password: store.bcfyPass || '', builtIn: false };
+  const builtIn = (keys.bcfyUser || '').trim();
+  if (builtIn && keys.bcfyPass) return { username: builtIn, password: keys.bcfyPass, builtIn: true };
+  return { username: '', password: '', builtIn: false };
 }
 
 /** Only http(s) stream addresses are accepted for MY SCANNER. Pure, for tests. */
@@ -106,13 +120,14 @@ export function createRadio(app) {
   }
 
   function playCalls(pack) {
-    if (!store.bcfyUser || !store.bcfyPass) {
+    const login = callsLogin(store, KEYS);
+    if (!login.username || !login.password) {
       toast('Enter your Broadcastify login first.');
       return;
     }
     stopPage();
     stopMine();
-    calls.start(pack.groups, { username: store.bcfyUser, password: store.bcfyPass });
+    calls.start(pack.groups, { username: login.username, password: login.password });
     playingId = 'calls';
     store.callsPack = pack.id;
     saveStore(store);
@@ -242,18 +257,23 @@ export function createRadio(app) {
       );
       return;
     }
-    const user = el('input', { type: 'text', placeholder: 'Broadcastify username', value: store.bcfyUser, autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' });
-    const pass = el('input', { type: 'password', placeholder: 'Broadcastify password', value: store.bcfyPass });
-    const remember = () => {
-      store.bcfyUser = user.value.trim();
-      store.bcfyPass = pass.value;
-      saveStore(store);
-    };
-    user.addEventListener('change', remember);
-    pass.addEventListener('change', remember);
-    body.appendChild(el('div', { class: 'search-row' }, user));
-    body.appendChild(el('div', { class: 'search-row' }, pass));
-    body.appendChild(el('p', { class: 'sheet-sub' }, 'Your login stays on this unit. Calls are a few seconds behind live and metered to your prepaid balance.'));
+    let remember = () => {};
+    if (callsLogin(store, KEYS).builtIn) {
+      body.appendChild(el('p', { class: 'sheet-sub' }, 'Login: built into the app, nothing to type. Calls are a few seconds behind live and metered to your prepaid balance.'));
+    } else {
+      const user = el('input', { type: 'text', placeholder: 'Broadcastify username', value: store.bcfyUser, autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' });
+      const pass = el('input', { type: 'password', placeholder: 'Broadcastify password', value: store.bcfyPass });
+      remember = () => {
+        store.bcfyUser = user.value.trim();
+        store.bcfyPass = pass.value;
+        saveStore(store);
+      };
+      user.addEventListener('change', remember);
+      pass.addEventListener('change', remember);
+      body.appendChild(el('div', { class: 'search-row' }, user));
+      body.appendChild(el('div', { class: 'search-row' }, pass));
+      body.appendChild(el('p', { class: 'sheet-sub' }, 'Your login stays on this unit. Calls are a few seconds behind live and metered to your prepaid balance.'));
+    }
     callsLine = el('p', { class: 'calls-line' });
     body.appendChild(callsLine);
     renderCallsLine();
@@ -346,7 +366,7 @@ export function createRadio(app) {
       'button',
       { class: 'result', onclick: () => openPage(feed) },
       el('b', {}, feed.name),
-      el('span', {}, `${feed.group} · ${miles} mi · ${feedSource(feed)}`),
+      el('span', {}, `${feed.group} · ${miles} mi · ${feedSourceText(feed)}`),
       feed.note ? el('span', { class: 'result-note' }, feed.note) : null,
     );
     if (playingId === feed.id) button.classList.add('on');
@@ -393,7 +413,8 @@ export function createRadio(app) {
         { class: 'sheet-sub' },
         native
           ? 'Opens the feed page in the radio drawer. Press play on it; it keeps playing while you drive. ' +
-            'Broadcastify asks you to sign in once (a free account; your live-calls login works). Do it parked.'
+            'Broadcastify pages need their sign-in each time the app restarts (their rules, not ours), so the ' +
+            'LIVE CALLS above are the no-touch way. OpenMHz pages need no sign-in.'
           : 'Opens the feed page in a new tab (on the truck it opens in the radio drawer).',
       ),
     );
