@@ -250,6 +250,7 @@ function onFix(raw) {
   } catch (err) {
     console.warn('truck:', err);
   }
+  if (gpsHelpKey) updateGpsHelp();
   // Add-ons must never stop the speed, the moving flag, the status or each other.
   try {
     routing.update(fix);
@@ -288,6 +289,7 @@ function onFix(raw) {
 const startedAt = Date.now();
 // GPS help card state, declared before the first status call below can reach it.
 const GPS_HELP_AFTER_MS = 20000; // a warm start usually has a fix by then
+const GPS_HELP_LOST_MS = 30000; // after a fix, a tunnel or overpass gap this short says nothing
 let gpsHelpKey = ''; // the problem on screen, '' when hidden
 let gpsHelpDismissed = ''; // the problem the driver swiped away
 let gpsProblemSpoken = '';
@@ -331,9 +333,13 @@ $('gpshelp-settings').addEventListener('click', () => {
   if (window.GevNative && typeof window.GevNative.openLocationSettings === 'function') window.GevNative.openLocationSettings();
 });
 function updateGpsHelp() {
-  const fresh = lastFix && lastFix.source === 'truck' && Date.now() - lastFixAt < GPS_STALE_MS;
+  const hadTruckFix = !!(lastFix && lastFix.source === 'truck');
+  const fresh = hadTruckFix && Date.now() - lastFixAt < GPS_STALE_MS;
+  if (fresh) gpsHelpDismissed = ''; // a later loss of signal may show it again
+  // Never had a fix: explain after a short wait. Lost one: only after a real gap, not a tunnel.
+  const waited = hadTruckFix ? Date.now() - lastFixAt >= GPS_HELP_LOST_MS : Date.now() - startedAt >= GPS_HELP_AFTER_MS;
   const help =
-    gps.hasTruckGps() && gps.source() === 'truck' && !fresh && Date.now() - startedAt >= GPS_HELP_AFTER_MS
+    gps.hasTruckGps() && gps.source() === 'truck' && !fresh && waited
       ? gpsHelp(gps.status(), Math.round((Date.now() - startedAt) / 1000))
       : null;
   if (!help || help.key === gpsHelpDismissed) {

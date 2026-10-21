@@ -1,13 +1,12 @@
 // RADIO: police, fire and highway patrol you can listen to while driving.
 //
-// Two ways to hear something:
-//  1. A public feed (Broadcastify or OpenMHz). Their pages are opened as-is in
-//     the truck's radio drawer (a second WebView the Android app owns), or in a
-//     new tab on a computer. The audio stays on their page; the app never
-//     relays it. That is the one way both sites allow.
-//  2. MY SCANNER: a stream from your own receiver (an RTL-SDR box running
+// Everything plays inside the app, never in a web page:
+//  1. LIVE CALLS: Broadcastify Calls through their licensed API. The channel
+//     list is read live for the county the truck is in (calls-directory.js),
+//     so only channels that are actually talking show up.
+//  2. RADIO STATIONS: public broadcast streams from the Radio Browser directory.
+//  3. MY SCANNER: a stream from your own receiver (an RTL-SDR box running
 //     trunk-recorder, SDRTrunk or OP25 that streams MP3 over the hotspot).
-//     That audio is yours, so it plays right here in the page.
 
 import { KEYS } from './config.js';
 import { fetchCounty, fetchStations, sortStations } from './stations.js';
@@ -93,6 +92,7 @@ export function createRadio(app) {
   let channelsLoading = false;
   let channelsError = '';
   const names = {}; // groupId -> short name, from the live list
+  let callsBox = null; // the live-calls part of the open sheet, redrawn on its own
 
   const calls = createCallsPlayer({
     onStatus(text) {
@@ -264,8 +264,7 @@ export function createRadio(app) {
       )
       .then(() => {
         channelsLoading = false;
-        // Fresh now, so this redraw does not ask again.
-        if (openSheetKind() === 'radio') openList();
+        refreshCallsBox();
       });
   }
 
@@ -286,10 +285,23 @@ export function createRadio(app) {
     return remember;
   }
 
+  /** Redraws only the live-calls part of the open sheet (the rest of the sheet is left alone). */
+  function refreshCallsBox() {
+    if (openSheetKind() !== 'radio' || !callsBox || !callsBox.parentNode) return;
+    callsBox.textContent = '';
+    fillCalls(callsBox);
+  }
+
+  function callsSection(body) {
+    callsBox = el('div');
+    body.appendChild(callsBox);
+    fillCalls(callsBox);
+  }
+
   // Everything plays inside the app through the Broadcastify Calls API: no web
   // pages, no sign-in screens. The list is read live, so only channels that are
   // actually talking show up (8 of the old 24 fixed channels were dead).
-  function callsSection(body) {
+  function fillCalls(body) {
     const where = county ? ` · ${county.name.toUpperCase()} COUNTY` : '';
     body.appendChild(el('div', { class: 'section' }, el('h3', {}, `LIVE CALLS NEAR YOU${where}`)));
     if (!hasCallsKeys()) {
@@ -311,7 +323,7 @@ export function createRadio(app) {
       body.appendChild(el('p', { class: 'sheet-sub' }, channelsError || 'Finding channels with live calls near you...'));
       if (channelsError) {
         body.appendChild(
-          el('button', { class: 'pill wide', onclick: () => { channelsTriedAt = 0; loadChannels(); } }, 'TRY AGAIN'),
+          el('button', { class: 'pill wide', onclick: () => { channelsTriedAt = 0; loadChannels(); refreshCallsBox(); } }, 'TRY AGAIN'),
         );
       }
       return;
