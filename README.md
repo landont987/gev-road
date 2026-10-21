@@ -64,6 +64,8 @@ Put keys in `keys.local.json` (never committed):
   "bcfyKeyId": "key id from bcfy.io/dev",
   "bcfySecret": "key secret from bcfy.io/dev",
   "bcfyAppId": "app id from bcfy.io/dev",
+  "bcfyUser": "your Broadcastify username (live calls, optional)",
+  "bcfyPass": "your Broadcastify password (live calls, optional)",
   "openai": "OpenAI API key (AI voice)",
   "gemini": "free Gemini key from aistudio.google.com (AI truck check)",
   "truckDescription": "year, make, model, color and what stands out"
@@ -77,7 +79,9 @@ monthly spending limit on the OpenAI account. The Gemini free tier has a daily
 limit; past it the check pauses until the limit resets.
 
 Every key is optional. Without `az511` the camera list is the AZGeo copy (last
-edited 2026-03-16). Without the three `bcfy` values the LIVE CALLS section only
+edited 2026-03-16). With `bcfyUser` and `bcfyPass` the live-calls login is built into the app, so
+nothing is typed on the head unit; leave them out and the unit asks once and
+remembers. Without the three `bcfy` id/secret/app values the LIVE CALLS section only
 shows a note. The Calls API endpoints and token format are copied from working
 open source clients; the first run with a real key is the proof.
 

@@ -21,6 +21,9 @@ const SWITCH = {
   road: 'sayRoad',
 };
 const SAMPLE = 'This is your GEV Road voice. Plate reader ahead.';
+// If a hung TTS engine or clip never reports "done speaking", the radio would
+// stay ducked (quiet). Force it back up after this long; real alerts are short.
+const DUCK_WATCHDOG_MS = 25000; // above Speech.CLIP_MAX_MS (20 s) so a real long alert is never cut
 
 const PROBLEMS = {
   'ai-key-refused': 'OpenAI refused the key, so the unit\'s own voice speaks until the app restarts. Check "openai" in keys.local.json.',
@@ -34,7 +37,12 @@ const PROBLEMS = {
 
 /** settings: the live settings object */
 export function createVoice(settings) {
-  window.gevOnSpeaking = (on) => duck(!!on);
+  let duckWatchdog = null;
+  window.gevOnSpeaking = (on) => {
+    clearTimeout(duckWatchdog);
+    duck(!!on);
+    if (on) duckWatchdog = setTimeout(() => duck(false), DUCK_WATCHDOG_MS);
+  };
   const problems = []; // shown in the VOICE panel too, since a toast can be covered
   // The app reports each problem once per run.
   window.gevOnVoiceProblem = (what) => {

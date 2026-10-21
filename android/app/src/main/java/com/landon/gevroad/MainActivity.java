@@ -503,6 +503,12 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** True in a debug build: the demo-drive controls show only then (never on the real truck). */
+        @JavascriptInterface
+        public boolean isDebug() {
+            return BuildConfig.DEBUG;
+        }
+
         /** The GPS state as JSON (see GpsWatch.statusJson), for the menu's LOCATION section. */
         @JavascriptInterface
         public String gpsStatusJson() {

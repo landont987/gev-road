@@ -54,3 +54,41 @@ test('nothing restarts once the driver stopped or switched', (t) => {
   t.mock.timers.tick(4000);
   assert.equal(restarts, 0);
 });
+
+test('a dead stream gives up after maxFailures restarts and calls onGiveUp', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const audio = fakeAudio();
+  let restarts = 0;
+  let gaveUp = 0;
+  watchStream(audio, {
+    retryMs: 4000,
+    stallMs: 15000,
+    maxFailures: 3,
+    isCurrent: () => true,
+    restart: () => { restarts += 1; audio.emit('error'); }, // the restart fails again at once
+    onGiveUp: () => { gaveUp += 1; },
+  });
+  audio.emit('error');
+  for (let i = 0; i < 10; i++) t.mock.timers.tick(4000);
+  assert.equal(restarts, 3, 'restarts stop at the cap');
+  assert.equal(gaveUp, 1, 'onGiveUp fires once');
+});
+
+test('a successful play resets the failure budget, so a later blip still retries', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const audio = fakeAudio();
+  let restarts = 0;
+  let gaveUp = 0;
+  watchStream(audio, {
+    retryMs: 4000, stallMs: 15000, maxFailures: 2,
+    isCurrent: () => true,
+    restart: () => { restarts += 1; },
+    onGiveUp: () => { gaveUp += 1; },
+  });
+  audio.emit('error'); t.mock.timers.tick(4000); // restart 1
+  audio.emit('playing'); // it recovered
+  audio.emit('error'); t.mock.timers.tick(4000); // restart 2 (budget reset)
+  audio.emit('error'); t.mock.timers.tick(4000); // restart 3
+  assert.equal(restarts, 3);
+  assert.equal(gaveUp, 0, 'never gave up because a play reset the count');
+});

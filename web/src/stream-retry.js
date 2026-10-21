@@ -5,17 +5,32 @@
 
 /**
  * audio: an HTMLAudioElement (or anything with addEventListener).
- * opts: { retryMs, stallMs, isCurrent(), restart() }
+ * opts: { retryMs, stallMs, isCurrent(), restart(), maxFailures?, onGiveUp?() }
+ * A hotspot blip restarts forever (any successful "playing" resets the count);
+ * a dead or mistyped URL never plays, so after maxFailures restarts in a row it
+ * gives up and calls onGiveUp instead of retrying (and billing data) forever.
  */
 export function watchStream(audio, opts) {
   let retry = null;
   let stall = null;
+  let failures = 0;
+  const cap = opts.maxFailures || Infinity;
+
+  function tryRestart() {
+    if (!opts.isCurrent()) return;
+    failures += 1;
+    if (failures > cap) {
+      if (opts.onGiveUp) opts.onGiveUp();
+      return;
+    }
+    opts.restart();
+  }
 
   function scheduleRestart() {
     if (retry || !opts.isCurrent()) return;
     retry = setTimeout(() => {
       retry = null;
-      if (opts.isCurrent()) opts.restart();
+      tryRestart();
     }, opts.retryMs);
   }
 
@@ -34,11 +49,12 @@ export function watchStream(audio, opts) {
       stall = null;
       clearTimeout(retry);
       retry = null;
-      if (opts.isCurrent()) opts.restart();
+      tryRestart();
     }, opts.stallMs);
   });
   audio.addEventListener('progress', clearStall);
   audio.addEventListener('playing', () => {
+    failures = 0; // it is playing again: a later blip gets the full retry budget afresh
     clearStall();
     clearTimeout(retry);
     retry = null;

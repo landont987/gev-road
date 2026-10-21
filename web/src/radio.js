@@ -21,6 +21,10 @@ import { watchStream } from './stream-retry.js';
 
 const STORE_KEY = 'gev-road-radio';
 const MY_SCANNER_RETRY_MS = 4000;
+// A dead or mistyped stream never plays: give up after this many restarts in a row
+// (about 80 s of error/ended retries, longer if stalls pace them) instead of retrying
+// on the hotspot forever. A hotspot blip that plays again resets the count.
+const STREAM_MAX_FAILURES = 20;
 const STREAM_STALL_MS = 15000; // no data this long after "stalled": the stream is dead, not slow
 const M_PER_MILE = 1609.344;
 
@@ -221,10 +225,16 @@ export function createRadio(app) {
     watchStream(audio, {
       retryMs: MY_SCANNER_RETRY_MS,
       stallMs: STREAM_STALL_MS,
+      maxFailures: STREAM_MAX_FAILURES,
       isCurrent: () => playingId === id && audio === mine,
       restart: () => {
         mine.src = url;
         mine.play().catch(() => {});
+      },
+      onGiveUp: () => {
+        if (playingId !== id || audio !== mine) return;
+        toast('The stream kept dropping, so it stopped. Check the address or the hotspot, then press play again.', 7000);
+        stopMine();
       },
     });
     audio.src = url;

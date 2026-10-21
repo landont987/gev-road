@@ -79,7 +79,7 @@ final class GpsWatch {
         @Override
         public void onLocationChanged(Location location) {
             if (!usable(location)) return;
-            if (!picker.accept(location.getProvider(), location.getTime(), SystemClock.elapsedRealtime())) return;
+            if (!picker.accept(location.getProvider(), location.getElapsedRealtimeNanos(), SystemClock.elapsedRealtime())) return;
             listener.onFix(location);
         }
 
@@ -180,6 +180,7 @@ final class GpsWatch {
         gnssStarted = false;
         satellites = 0;
         satellitesUsed = 0;
+        picker.reset();
         listening.clear();
     }
 
@@ -217,7 +218,7 @@ final class GpsWatch {
         if (best == null || !usable(best)) return;
         long age = ageMs(best);
         if (age < LAST_FIX_MAX_AGE_MS) {
-            if (picker.accept(best.getProvider(), best.getTime(), SystemClock.elapsedRealtime())) listener.onFix(best);
+            if (picker.accept(best.getProvider(), best.getElapsedRealtimeNanos(), SystemClock.elapsedRealtime())) listener.onFix(best);
         } else if (age < LAST_SEEN_MAX_AGE_MS) {
             // Also kept in statusJson: at a cold start this push lands before the page exists.
             lastKnown = best;
