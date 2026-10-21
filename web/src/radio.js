@@ -55,9 +55,12 @@ export function sortFeedsByDistance(feeds, origin) {
  * the app from keys.local.json so nothing is ever typed there (#66). Pure, for tests.
  */
 export function callsLogin(store, keys) {
-  const username = (store.bcfyUser || '').trim() || (keys.bcfyUser || '').trim();
-  const password = store.bcfyPass || keys.bcfyPass || '';
-  return { username, password, builtIn: !(store.bcfyUser || '').trim() && !!(keys.bcfyUser && keys.bcfyPass) };
+  // Both halves from one place: a typed username never borrows the built-in password.
+  const typed = (store.bcfyUser || '').trim();
+  if (typed) return { username: typed, password: store.bcfyPass || '', builtIn: false };
+  const builtIn = (keys.bcfyUser || '').trim();
+  if (builtIn && keys.bcfyPass) return { username: builtIn, password: keys.bcfyPass, builtIn: true };
+  return { username: '', password: '', builtIn: false };
 }
 
 /** Only http(s) stream addresses are accepted for MY SCANNER. Pure, for tests. */

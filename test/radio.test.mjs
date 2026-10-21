@@ -57,6 +57,8 @@ test('callsLogin: built into the app from the keys, unless one was typed on the 
   assert.deepEqual(callsLogin({ bcfyUser: 'other', bcfyPass: 'x' }, keys), { username: 'other', password: 'x', builtIn: false });
   assert.deepEqual(callsLogin({}, {}), { username: '', password: '', builtIn: false });
   assert.equal(callsLogin({ bcfyUser: '  ' }, { bcfyUser: 'a' }).builtIn, false, 'a key without a password is not a login');
+  assert.deepEqual(callsLogin({ bcfyUser: 'other', bcfyPass: '' }, keys), { username: 'other', password: '', builtIn: false }, 'a typed name never borrows the built-in password');
+  assert.deepEqual(callsLogin({ bcfyUser: '', bcfyPass: 'stale' }, keys), { username: 'landon', password: 'pw', builtIn: true }, 'a leftover password without a name is ignored');
 });
 
 test('feedSourceText tells the driver which pages need a sign-in', async () => {
