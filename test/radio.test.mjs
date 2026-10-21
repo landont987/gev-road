@@ -49,3 +49,18 @@ test('MY SCANNER accepts only an http or https address', () => {
   assert.equal(cleanStreamUrl(''), '');
   assert.equal(cleanStreamUrl(null), '');
 });
+
+test('callsLogin: built into the app from the keys, unless one was typed on the unit (#66)', async () => {
+  const { callsLogin } = await import('../web/src/radio.js');
+  const keys = { bcfyUser: ' landon ', bcfyPass: 'pw' };
+  assert.deepEqual(callsLogin({ bcfyUser: '', bcfyPass: '' }, keys), { username: 'landon', password: 'pw', builtIn: true });
+  assert.deepEqual(callsLogin({ bcfyUser: 'other', bcfyPass: 'x' }, keys), { username: 'other', password: 'x', builtIn: false });
+  assert.deepEqual(callsLogin({}, {}), { username: '', password: '', builtIn: false });
+  assert.equal(callsLogin({ bcfyUser: '  ' }, { bcfyUser: 'a' }).builtIn, false, 'a key without a password is not a login');
+});
+
+test('feedSourceText tells the driver which pages need a sign-in', async () => {
+  const { feedSourceText } = await import('../web/src/radio-feeds.js');
+  assert.equal(feedSourceText({ kind: 'openmhz' }), 'OpenMHz page, no sign-in');
+  assert.equal(feedSourceText({ kind: 'broadcastify' }), 'Broadcastify page, sign in there');
+});

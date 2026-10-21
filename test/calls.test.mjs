@@ -87,8 +87,17 @@ test('the live query uses plain commas (Broadcastify reads %2C as one unknown gr
   assert.equal(liveQuery({ groups: ['2508-2811'], pos: 1792483499 }), 'groups=2508-2811&pos=1792483499');
 });
 
-test('the first answer starts from the last 2 minutes', () => {
-  const calls = [{ ts: 1000 }, { ts: 1890 }, { ts: 1990 }];
-  assert.deepEqual(recentOnly(calls, 2000).map((c) => c.ts), [1890, 1990]);
-  assert.equal(recentOnly(calls, undefined).length, 3, 'no server time: keep them all');
+test('the first answer starts with the newest three calls of the last 10 minutes', () => {
+  const calls = [{ ts: 1000 }, { ts: 1450 }, { ts: 1500 }, { ts: 1890 }, { ts: 1990 }];
+  assert.deepEqual(recentOnly(calls, 2000).map((c) => c.ts), [1500, 1890, 1990]);
+  assert.deepEqual(recentOnly(calls.slice(0, 2), 2000).map((c) => c.ts), [1450], 'older than 10 min: dropped');
+  assert.equal(recentOnly(calls, undefined).length, 5, 'no server time: keep them all');
+});
+
+test('idleStatus says listening, then how long the channel has been quiet', async () => {
+  const { idleStatus, QUIET_AFTER_S } = await import('../web/src/calls.js');
+  assert.equal(idleStatus(0, 5000), 'listening, no call yet');
+  assert.equal(idleStatus(4990, 5000), 'listening');
+  assert.equal(idleStatus(5000 - QUIET_AFTER_S, 5000), 'quiet for 1 min');
+  assert.equal(idleStatus(5000 - 7 * 60, 5000), 'quiet for 7 min');
 });

@@ -24,6 +24,10 @@ export function readKeys() {
     bcfyKeyId: read('bcfyKeyId'),
     bcfySecret: read('bcfySecret'),
     bcfyAppId: read('bcfyAppId'),
+    // The owner's Broadcastify account for the live calls (the app's own auth call), so
+    // nothing is typed on the head unit (#66).
+    bcfyUser: read('bcfyUser'),
+    bcfyPass: read('bcfyPass'),
     openai: read('openai'),
     gemini: read('gemini'),
     truckDescription: read('truckDescription'),
