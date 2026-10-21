@@ -144,35 +144,52 @@ export function setOn(button, on) {
  */
 export function fetchWithTimeout(url, ms, init) {
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
-  let timer = null;
-  const timeout = new Promise((resolve, reject) => {
-    timer = setTimeout(() => {
+  const options = Object.assign({}, init, controller ? { signal: controller.signal } : {});
+  const start = Date.now();
+  let headerTimer = null;
+  const headerTimeout = new Promise((resolve, reject) => {
+    headerTimer = setTimeout(() => {
       if (controller) controller.abort();
       reject(new Error(`timed out after ${ms} ms`));
     }, ms);
   });
-  const done = (promise) =>
-    Promise.race([promise, timeout]).then(
+  // Each body read gets what is left of the budget (at least 2 s) and aborts a
+  // stalled download. The header timer is cleared the moment the response
+  // arrives, so a caller that returns without reading a body (a 404 tile, say)
+  // leaves no timer or AbortController dangling (#4).
+  const body = (promise) => {
+    const remaining = Math.max(2000, ms - (Date.now() - start));
+    let t = null;
+    const timeout = new Promise((resolve, reject) => {
+      t = setTimeout(() => {
+        if (controller) controller.abort();
+        reject(new Error(`timed out after ${ms} ms`));
+      }, remaining);
+    });
+    return Promise.race([promise, timeout]).then(
       (value) => {
-        clearTimeout(timer);
+        clearTimeout(t);
         return value;
       },
       (err) => {
-        clearTimeout(timer);
+        clearTimeout(t);
         throw err;
       },
     );
-  const options = Object.assign({}, init, controller ? { signal: controller.signal } : {});
-  return Promise.race([fetch(url, options), timeout]).then(
-    (res) => ({
-      ok: res.ok,
-      status: res.status,
-      json: () => done(res.json()),
-      text: () => done(res.text()),
-      arrayBuffer: () => done(res.arrayBuffer()),
-    }),
+  };
+  return Promise.race([fetch(url, options), headerTimeout]).then(
+    (res) => {
+      clearTimeout(headerTimer);
+      return {
+        ok: res.ok,
+        status: res.status,
+        json: () => body(res.json()),
+        text: () => body(res.text()),
+        arrayBuffer: () => body(res.arrayBuffer()),
+      };
+    },
     (err) => {
-      clearTimeout(timer);
+      clearTimeout(headerTimer);
       throw err;
     },
   );

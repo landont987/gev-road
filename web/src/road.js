@@ -59,8 +59,11 @@ export function createRoad(deps) {
         rebuild();
       })
       .catch((err) => {
-        // Keep the last good list; try again sooner than the normal wait.
-        fetchedAt[feed] = Date.now() - (FEEDS[feed].everyMs - RETRY_MS);
+        // Keep the last good list; try again RETRY_MS from now, not the normal wait.
+        // Base it on the interval in force now (low-data uses a longer one), or the
+        // retry would stretch to minutes exactly when the hotspot is flaky (#1).
+        const activeWait = app.isLowData() ? FEEDS[feed].lowDataEveryMs : FEEDS[feed].everyMs;
+        fetchedAt[feed] = Date.now() - activeWait + RETRY_MS;
         console.warn(`road info ${feed}:`, err.message || err);
       })
       .then(() => {
