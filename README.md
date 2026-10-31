@@ -234,7 +234,7 @@ and check your local laws on radio scanners and electronics in vehicles.
 
 [MIT](LICENSE). GEV Road builds on
 [God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) by Bilawal
-Sidhu (MIT); its notice is kept in [LICENSE](LICENSE). Data stays under its
+Sidhu (MIT); its notice is kept in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Data stays under its
 own license (see [Data sources](#data-sources-all-checked-live-on-2026-10-06)).
 
 ## Credits
