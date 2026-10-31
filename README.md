@@ -1,11 +1,37 @@
 # GEV Road
 
-A small 2D road map for an Android 9 head unit (2 GB RAM, MediaTek MT8163,
-1280x720). It keeps the road-focused parts of
-[God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) (MIT) and
-drops the 3D globe, which is too heavy for the unit.
+**A lightweight 2D road map for Android car head units: Arizona traffic cameras, road closures, plate-reader locations, live police and fire radio, and spoken alerts, all hands-free while you drive.**
 
-## What it does
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform: Android 9+](https://img.shields.io/badge/platform-Android%209%2B-3ddc84.svg)
+![Node 24](https://img.shields.io/badge/node-24-339933.svg)
+![Tests: node:test](https://img.shields.io/badge/tests-node%3Atest-informational.svg)
+
+![GEV Road map of downtown Phoenix with ADOT cameras and plate readers](docs/images/map.jpg)
+
+GEV Road runs on a low-end Android 9 head unit (2 GB RAM, MediaTek MT8163,
+1280x720, WebView 66). It keeps the road-focused parts of
+[God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) (MIT) and
+drops the 3D globe, which is too heavy for the unit. It is a Leaflet page
+inside a small Android WebView shell.
+
+| Camera picture | Drive mode |
+|---|---|
+| ![A live ADOT camera picture opened from the map](docs/images/camera.jpg) | ![Drive mode with four big buttons](docs/images/drive.jpg) |
+
+## Contents
+
+- [Features](#features)
+- [Getting started](#getting-started)
+- [Keys](#keys)
+- [Install from a USB stick](#install-from-a-usb-stick)
+- [Data sources](#data-sources-all-checked-live-on-2026-10-06)
+- [Plate-reader detector (optional)](#plate-reader-detector-optional-usb-add-on)
+- [Engine data (optional)](#engine-data-optional-androbd-add-on)
+- [Disclaimer](#disclaimer)
+- [License and credits](#license)
+
+## Features
 
 - **Follow my truck:** the map stays centered on the truck's GPS, arrow points the way you drive. Drag the map to look around, tap RECENTER to come back.
 - **Directions:** search a place or press and hold the map, then follow the turn bar. Re-routes when you leave the line.
@@ -26,6 +52,75 @@ drops the 3D globe, which is too heavy for the unit.
   - *Every feed in this county:* one button opens Broadcastify's full list for the county the truck is in (police, fire, ham repeaters, GMRS, rail, weather, with who is online). The county comes from the FCC census lookup, or the nearest county center when offline.
   - *Radio stations near me:* Arizona internet radio stations from the public-domain Radio Browser directory, nearest first, played right in the page.
   - *My scanner:* an MP3 stream from your own receiver (RTL-SDR plus trunk-recorder, SDRTrunk or OP25), played right in the page.
+
+## Getting started
+
+Needs Node 24, JDK 17 and the Android SDK (platform 36, build-tools 36).
+
+```bash
+git clone https://github.com/landont987/gev-road.git
+cd gev-road
+npm install
+npm test
+cp keys.local.example.json keys.local.json   # then fill in the keys you have
+npm run dev                                   # browser preview with a demo drive
+```
+
+`npm run dev` serves the page at http://localhost:4180 with a demo drive
+around downtown Phoenix. Voice, GPS, USB and AndrOBD only exist on Android.
+
+Build the APK:
+
+```bash
+node scripts/build-web.mjs --android
+cd android && ./gradlew assembleRelease
+```
+
+The APK lands in `android/app/build/outputs/apk/release/app-release.apk`.
+
+## Keys
+
+Copy `keys.local.example.json` to `keys.local.json` (git-ignored, never
+committed) and fill in the slots you need. Every key is optional; a feature
+without its key stays off and says so.
+
+| Slot | What it turns on | Where to get it |
+|---|---|---|
+| `az511` | Fresh camera list and road info pop-ups | Free AZ511 developer key |
+| `tomtom` | Live traffic colors | Free TomTom developer key |
+| `bcfyKeyId`, `bcfySecret`, `bcfyAppId` | Live calls played in the app | Broadcastify Developer Program, [bcfy.io/dev](https://bcfy.io/dev) (prepaid) |
+| `bcfyUser`, `bcfyPass` | Live-calls sign-in built in (optional) | Your Broadcastify account |
+| `openai` | AI voice for spoken alerts | OpenAI API key (pay per use) |
+| `gemini` | AI truck check at cameras | Free key from [Google AI Studio](https://aistudio.google.com) |
+| `truckDescription` | What the AI truck check looks for | Year, make, model, color and what stands out |
+
+> [!WARNING]
+> `scripts/build-web.mjs` builds the keys into the app. Keep your APK to
+> yourself: never commit it, attach it to a release or share it.
+
+For the AI truck check, also save a photo of your truck as `truck.local.jpg`
+(about 1200 px wide and 100 KB, since every check uploads it; never
+committed). Keys are built into the APK, so keep the APK to yourself and set a
+monthly spending limit on the OpenAI account. The Gemini free tier has a daily
+limit; past it the check pauses until the limit resets.
+
+Without `az511` the camera list is the AZGeo copy (last
+edited 2026-03-16). With `bcfyUser` and `bcfyPass` the live-calls login is built into the app, so
+nothing is typed on the head unit; leave them out and the unit asks once and
+remembers. Without the three `bcfy` id/secret/app values the LIVE CALLS section only
+shows a note. The Calls API endpoints and token format are copied from working
+open source clients; the first run with a real key is the proof.
+
+## Install from a USB stick
+
+1. Copy the APK to a FAT32 USB stick.
+2. On the head unit, open the file manager, open the USB drive, tap the APK.
+3. If Android blocks it, allow "Install unknown apps" for the file manager when it asks.
+4. Open GEV Road and allow location.
+5. For speed: in the Play Store, update "Android System WebView" and, if it is
+   installed, "Google Chrome" (on Android 9 either one can be what draws the
+   app). Reopen GEV Road; ☰ → VERSION shows the WebView number. 66 is from
+   2018; 138 is the newest Android 9 can get (Chrome 139 needs Android 10).
 
 ## Data sources (all checked live on 2026-10-06)
 
@@ -53,37 +148,16 @@ Not used, and why: CARTO dark tiles now need a key. AZ511's `/list/getdata/`
 and `/map/map*/` paths are blocked by its robots.txt, so camera lists come from
 the state's AZGeo copy (and later the official AZ511 API with a key).
 
-## Keys
-
-Put keys in `keys.local.json` (never committed):
-
-```json
-{
-  "tomtom": "your-key",
-  "az511": "your-az511-developer-key",
-  "bcfyKeyId": "key id from bcfy.io/dev",
-  "bcfySecret": "key secret from bcfy.io/dev",
-  "bcfyAppId": "app id from bcfy.io/dev",
-  "bcfyUser": "your Broadcastify username (live calls, optional)",
-  "bcfyPass": "your Broadcastify password (live calls, optional)",
-  "openai": "OpenAI API key (AI voice)",
-  "gemini": "free Gemini key from aistudio.google.com (AI truck check)",
-  "truckDescription": "year, make, model, color and what stands out"
-}
-```
-
-For the AI truck check, also save a photo of your truck as `truck.local.jpg`
-(about 1200 px wide and 100 KB, since every check uploads it; never
-committed). Keys are built into the APK, so keep the APK to yourself and set a
-monthly spending limit on the OpenAI account. The Gemini free tier has a daily
-limit; past it the check pauses until the limit resets.
-
-Every key is optional. Without `az511` the camera list is the AZGeo copy (last
-edited 2026-03-16). With `bcfyUser` and `bcfyPass` the live-calls login is built into the app, so
-nothing is typed on the head unit; leave them out and the unit asks once and
-remembers. Without the three `bcfy` id/secret/app values the LIVE CALLS section only
-shows a note. The Calls API endpoints and token format are copied from working
-open source clients; the first run with a real key is the proof.
+**Data licenses and terms.** OpenStreetMap data, including the bundled
+`web/src/data/az-speed-cameras.json` and the DeFlock plate-reader tiles, is ©
+OpenStreetMap contributors under the
+[Open Database License (ODbL)](https://www.openstreetmap.org/copyright). The
+Radio Browser directory is public domain (PDDL). Camera pictures and road
+information belong to ADOT / AZ511, traffic tiles to TomTom, and feeds to
+Broadcastify and OpenMHz, each under its own terms. GEV Road never relays or
+embeds Broadcastify web-feed audio: live calls use your own Calls API keys, and
+web feeds open on Broadcastify's own page. If you run your own copy, bring your
+own keys and follow each provider's terms.
 
 ## Plate-reader detector (optional USB add-on)
 
@@ -147,30 +221,21 @@ before it says "°F". AndrOBD's Freeze frame screen sends its stored readings li
 live ones, so GEV Road may show them. Never tap "Clear fault codes" in AndrOBD
 before an emissions test: it resets the readiness checks.
 
-## Build
+## Disclaimer
 
-Needs Node 24, JDK 17 and the Android SDK (platform 36, build-tools 36).
+GEV Road is an independent personal project. It is not affiliated with or
+endorsed by ADOT, AZ511, Broadcastify, OpenMHz, Flock Safety, DeFlock, TomTom,
+OpenAI or Google. Map data, camera locations and road information can be late,
+incomplete or wrong, and the AI features are guesses. Keep your eyes on the
+road: the app is built so nothing needs a tap while driving. Obey traffic laws,
+and check your local laws on radio scanners and electronics in vehicles.
 
-```bash
-npm install
-npm test
-node scripts/build-web.mjs --android
-cd android && ./gradlew assembleRelease
-```
+## License
 
-The APK lands in `android/app/build/outputs/apk/release/app-release.apk`.
-`npm run dev` serves the same page at http://localhost:4180 with a demo drive.
-
-## Install from a USB stick
-
-1. Copy the APK to a FAT32 USB stick.
-2. On the head unit, open the file manager, open the USB drive, tap the APK.
-3. If Android blocks it, allow "Install unknown apps" for the file manager when it asks.
-4. Open GEV Road and allow location.
-5. For speed: in the Play Store, update "Android System WebView" and, if it is
-   installed, "Google Chrome" (on Android 9 either one can be what draws the
-   app). Reopen GEV Road; ☰ → VERSION shows the WebView number. 66 is from
-   2018; 138 is the newest Android 9 can get (Chrome 139 needs Android 10).
+[MIT](LICENSE). GEV Road builds on
+[God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) by Bilawal
+Sidhu (MIT); its notice is kept in [LICENSE](LICENSE). Data stays under its
+own license (see [Data sources](#data-sources-all-checked-live-on-2026-10-06)).
 
 ## Credits
 

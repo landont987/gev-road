@@ -8,8 +8,8 @@ Issues, and shipped work lives in `CHANGELOG.md`.
 A 2D road map app for the owner's truck head unit, built from the road parts of
 [God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) (MIT). The app is
 Leaflet in an Android WebView shell (`web/` is the page, `android/` is the shell).
-It's a personal sideload, private for now, and the owner wants to make it public
-later (see the "Go public" issue).
+It's a personal sideload. The repo has been public since 2026-10-30, so every
+commit, issue and PR is visible to anyone (see the "Go public" issue).
 
 - **Head unit:** Android 9, 2 GB RAM, MediaTek MT8163, 1280x720, Chrome WebView 66. Internet comes from the owner's phone hotspot.
 - **Area:** Phoenix metro and statewide Arizona highways.
@@ -97,7 +97,7 @@ later (see the "Go public" issue).
 - **How to answer:** short plain answers, the answer first. Ask for a decision as "my recommendation is X, yes or no?" End with one bold action for the owner, or "Nothing for you to do."
 
 ## GitHub workflow
-- **Repo:** private `landont987/gev-road`. Push only commits that passed `npm test`.
+- **Repo:** public `landont987/gev-road` (since 2026-10-30): never commit keys, personal details or APKs. Push only commits that passed `npm test`.
 - **Issues:** one per unit of work, labeled with an area (`area:cameras`, `area:road-info`, `area:radio`, `area:voice`, `area:truck-check`, `area:detector`, `area:engine`, `area:map`, `area:build`) and a type (`bug`, `feature`, `hardware`, `research`, `go-public`).
 - **Commits:** `type(scope): summary`, with `Closes #N` when one finishes an issue.
 - **Tags:** `v<version>` on the commit that bumps the version.
